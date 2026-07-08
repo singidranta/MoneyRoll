@@ -283,8 +283,12 @@ export class WorldScene extends Phaser.Scene {
     }
     this.npcSpritesList = [];
 
-    // Полностью очищаем физическую группу коллизий, чтобы пересоздать её без дубликатов
-    this.obstaclesGroup.clear(true, true);
+    // Полностью уничтожаем старую физическую группу коллизий, чтобы очистить кэш физического мира от "призрачных" тел!
+    if (this.obstaclesGroup) {
+      this.obstaclesGroup.destroy(true);
+    }
+    this.obstaclesGroup = this.physics.add.staticGroup();
+    this.physics.add.collider(this.player, this.obstaclesGroup);
 
     // Рендерим сущности из единой карты
     for (const entity of Object.values(this.mapJson.entities)) {
@@ -798,45 +802,46 @@ export class WorldScene extends Phaser.Scene {
     hud.style.background = "url('/assets/ui/panel-bg.webp') repeat";
     hud.style.color = '#ffffff';
     hud.style.border = '4px solid #7cfc00';
-    hud.style.borderRadius = '8px';
-    hud.style.padding = '14px 18px';
+    hud.style.borderRadius = '10px';
+    hud.style.padding = '18px 24px';
     hud.style.fontFamily = 'monospace';
-    hud.style.fontSize = '14px';
+    hud.style.fontSize = '18px'; // Было 14px -> стало крупно 18px!
     hud.style.zIndex = '9999';
-    hud.style.lineHeight = '1.5';
-    hud.style.boxShadow = '0 4px 15px rgba(0,0,0,0.6)';
+    hud.style.lineHeight = '1.6';
+    hud.style.boxShadow = '0 5px 20px rgba(0,0,0,0.7)';
     hud.style.imageRendering = 'pixelated';
+    hud.style.width = '320px'; // Фиксированная сочная ширина
 
     hud.innerHTML = `
-      <div style="font-weight:bold; font-size:16px; margin-bottom:6px; color:#fff; display:flex; align-items:center;">
-        <img src="/assets/chars/player.webp" style="width:24px; height:24px; margin-right:8px; border-radius:50%;" /> MONEYROLL HUD
+      <div style="font-weight:bold; font-size:22px; margin-bottom:8px; color:#fff; display:flex; align-items:center;">
+        <img src="/assets/chars/player.webp" style="width:36px; height:36px; margin-right:12px; border-radius:50%;" /> MONEYROLL HUD
       </div>
-      <div id="hud-money" style="display:flex; align-items:center; margin-bottom:4px; font-weight:bold; color:#7cfc00;">
-        <img src="/assets/icons/coin.webp" style="width:16px; height:16px; margin-right:6px;" /> Баланс: $5.00
+      <div id="hud-money" style="display:flex; align-items:center; margin-bottom:6px; font-weight:bold; font-size:20px; color:#7cfc00;">
+        <img src="/assets/icons/coin.webp" style="width:24px; height:24px; margin-right:8px;" /> Баланс: $5.00
       </div>
-      <div id="hud-weight">Сумка: Пакет (0.0 / 8.0 кг)</div>
+      <div id="hud-weight" style="font-size:16px;">Сумка: Пакет (0.0 / 8.0 кг)</div>
       
       <!-- Полоска выносливости (Stamina) -->
-      <div style="margin-top:6px;">
-        <span style="font-size:11px; color:#ccc; display:block; margin-bottom:2px;">⚡ Энергия (Бег: зажми Shift):</span>
-        <div style="width: 150px; background: #333; height: 8px; border-radius: 4px; overflow:hidden; border:1px solid #555;">
+      <div style="margin-top:8px;">
+        <span style="font-size:13px; color:#ccc; display:block; margin-bottom:4px;">⚡ Энергия (Бег: зажми Shift):</span>
+        <div style="width: 100%; background: #333; height: 14px; border-radius: 6px; overflow:hidden; border:1px solid #555;">
           <div id="hud-stamina-bar" style="background:#ffd700; width:100%; height:100%; transition: width 0.1s;"></div>
         </div>
       </div>
 
-      <div style="font-size:12px; color:#aaa; margin-top:8px;">Игроков рядом: <span id="hud-players">1</span></div>
-      <div style="font-size:11px; color:#ff9900; margin-top:2px;">Клавиша L: лаг-симулятор (${this.simulatedLagMs}мс)</div>
+      <div style="font-size:14px; color:#ccc; margin-top:10px;">Игроков рядом: <span id="hud-players">1</span></div>
+      <div style="font-size:12px; color:#ff9900; margin-top:4px;">Клавиша L: лаг-симулятор (${this.simulatedLagMs}мс)</div>
       
-      <button id="btn-toggle-inv" style="margin-top:10px; width:100%; padding:8px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; border-radius:4px; font-weight:bold; cursor:pointer; font-family: monospace; image-rendering: pixelated; color:#000;">ИНВЕНТАРЬ (I)</button>
+      <button id="btn-toggle-inv" style="margin-top:14px; width:100%; padding:12px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; border-radius:4px; font-weight:bold; cursor:pointer; font-family: monospace; image-rendering: pixelated; color:#000; font-size:16px; transition: transform 0.1s;">ОТКРЫТЬ РЮКЗАК (I)</button>
       
       <!-- Индикатор автомата сдачи -->
-      <div id="kiosk-prompt-indicator" style="display:none; margin-top:10px; background:rgba(255,215,0,0.2); color:#ffd700; border:1px solid #ffd700; padding:6px; border-radius:3px; text-align:center; font-weight:bold; animation: pulse 1s infinite alternate;">
+      <div id="kiosk-prompt-indicator" style="display:none; margin-top:12px; background:rgba(255,215,0,0.2); color:#ffd700; border:2px solid #ffd700; padding:10px; border-radius:4px; text-align:center; font-weight:bold; font-size:14px; animation: pulse 1s infinite alternate;">
         [E] ОТКРЫТЬ АВТОМАТ СДАЧИ
       </div>
 
       <!-- Индикатор Ларька Шаурмы -->
-      <div id="food-cart-prompt-indicator" style="display:none; margin-top:10px; background:rgba(0,204,255,0.2); color:#00ccff; border:1px solid #00ccff; padding:6px; border-radius:3px; text-align:center; font-weight:bold; animation: pulse 1s infinite alternate;">
-        [E] ЗАЙТИ К АШОТУ (ШАУРМА / СУМКИ)
+      <div id="food-cart-prompt-indicator" style="display:none; margin-top:12px; background:rgba(0,204,255,0.2); color:#00ccff; border:2px solid #00ccff; padding:10px; border-radius:4px; text-align:center; font-weight:bold; font-size:14px; animation: pulse 1s infinite alternate;">
+        [E] ЗАЙТИ К АШОТУ (ШАУРМА)
       </div>
     `;
 
@@ -859,28 +864,28 @@ export class WorldScene extends Phaser.Scene {
     inv.style.transform = 'translate(-50%, -50%)';
     inv.style.background = "url('/assets/ui/panel-bg.webp') repeat";
     inv.style.border = '4px solid #7cfc00';
-    inv.style.borderRadius = '8px';
-    inv.style.padding = '18px';
+    inv.style.borderRadius = '10px';
+    inv.style.padding = '25px';
     inv.style.fontFamily = 'monospace';
     inv.style.zIndex = '99999';
-    inv.style.boxShadow = '0 5px 25px rgba(0,0,0,0.8)';
+    inv.style.boxShadow = '0 8px 30px rgba(0,0,0,0.85)';
     inv.style.display = 'none';
     inv.style.pointerEvents = 'auto';
     inv.style.imageRendering = 'pixelated';
 
     inv.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid #333; padding-bottom:6px;">
-        <span style="font-weight:bold; font-size:15px; color:#7cfc00; letter-spacing:1px; display:flex; align-items:center;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:2px solid #333; padding-bottom:10px;">
+        <span style="font-weight:bold; font-size:22px; color:#7cfc00; letter-spacing:1px; display:flex; align-items:center;">
           🎒 МОЙ РЮКЗАК (3х4 слота)
         </span>
-        <button id="btn-close-inv" style="background:none; border:none; color:#ff4444; font-weight:bold; cursor:pointer; font-size:16px;">[X]</button>
+        <button id="btn-close-inv" style="background:none; border:none; color:#ff4444; font-weight:bold; cursor:pointer; font-size:24px;">[X]</button>
       </div>
       
-      <div id="inventory-grid" style="display:grid; grid-template-columns: repeat(4, 72px); grid-template-rows: repeat(3, 72px); gap: 10px; margin-bottom:12px;">
+      <div id="inventory-grid" style="display:grid; grid-template-columns: repeat(4, 96px); grid-template-rows: repeat(3, 96px); gap: 12px; margin-bottom:16px;">
         <!-- Сюда вставляются слоты динамически -->
       </div>
       
-      <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#888;">
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px; color:#ccc;">
         <span>Клик по предмету — сдать (у автомата)</span>
         <span id="inv-weight-status">Вес: 0.0 / 8.0 кг</span>
       </div>
@@ -1103,12 +1108,12 @@ export class WorldScene extends Phaser.Scene {
       const item = this.localInventory[i];
       const slot = document.createElement('div');
       
-      slot.style.width = '70px';
-      slot.style.height = '70px';
+      slot.style.width = '94px';
+      slot.style.height = '94px';
       slot.style.background = "url('/assets/ui/slot-bg.webp') no-repeat center";
       slot.style.backgroundSize = '100% 100%';
       slot.style.border = 'none';
-      slot.style.borderRadius = '6px';
+      slot.style.borderRadius = '8px';
       slot.style.display = 'flex';
       slot.style.alignItems = 'center';
       slot.style.justifyContent = 'center';
@@ -1121,8 +1126,8 @@ export class WorldScene extends Phaser.Scene {
         const webpPath = `/assets/props/flat/bottles/${item}.webp`;
 
         slot.innerHTML = `
-          <img src="${webpPath}" style="max-width:44px; max-height:48px; object-fit:contain;" />
-          <div style="position:absolute; right:6px; bottom:6px; font-size:9px; color:#fff; background:#000000aa; padding:1px 3px; border-radius:2px; font-family: monospace;">
+          <img src="${webpPath}" style="max-width:64px; max-height:68px; object-fit:contain;" />
+          <div style="position:absolute; right:8px; bottom:8px; font-size:12px; color:#fff; background:#000000aa; padding:2px 5px; border-radius:2px; font-family: monospace;">
             ${def.weight}кг
           </div>
         `;
@@ -1135,7 +1140,7 @@ export class WorldScene extends Phaser.Scene {
           }
         });
       } else {
-        slot.innerHTML = `<span style="font-size:9px; color:#444;">${i+1}</span>`;
+        slot.innerHTML = `<span style="font-size:12px; color:#555;">${i+1}</span>`;
       }
 
       grid.appendChild(slot);
