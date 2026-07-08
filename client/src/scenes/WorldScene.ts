@@ -21,7 +21,7 @@ type SnapshotEntry = {
 type NetInfo = { ips: Array<{ iface: string; ip: string }>; port: number };
 
 export class WorldScene extends Phaser.Scene {
-  private player!: Phaser.GameObjects.Image; // Персонаж теперь сочный WebP спрайт
+  private player!: Phaser.GameObjects.Sprite; // Персонаж теперь анимированный спрайт!
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<string, Phaser.Input.Keyboard.Key>;
   private keyE!: Phaser.Input.Keyboard.Key;
@@ -32,7 +32,7 @@ export class WorldScene extends Phaser.Scene {
   private networkPanel!: Phaser.GameObjects.Text;
   private lastSentAt = 0;
   private myId: string | null = null;
-  private remotePlayers = new Map<string, Phaser.GameObjects.Image>();
+  private remotePlayers = new Map<string, Phaser.GameObjects.Sprite>();
   private snapshotBuffer: SnapshotEntry[] = [];
 
   // Игровая логика и сущности
@@ -99,9 +99,37 @@ export class WorldScene extends Phaser.Scene {
     this.groundTileSprite.setDepth(0);
 
     // Персонаж — сочный детализированный WebP спрайт!
-    this.player = this.add.image(DEFAULT_SPAWN.x, DEFAULT_SPAWN.y, 'player');
+    this.player = this.add.sprite(DEFAULT_SPAWN.x, DEFAULT_SPAWN.y, 'player');
     this.player.setScale(0.85);
     this.player.setDepth(500);
+
+    // Создаем анимации ходьбы из атласа spritesheet
+    if (!this.anims.exists('walk-down')) {
+      this.anims.create({
+        key: 'walk-down',
+        frames: this.anims.generateFrameNumbers('player-sprites', { start: 0, end: 3 }),
+        frameRate: 10,
+        repeat: -1
+      });
+      this.anims.create({
+        key: 'walk-left',
+        frames: this.anims.generateFrameNumbers('player-sprites', { start: 4, end: 7 }),
+        frameRate: 10,
+        repeat: -1
+      });
+      this.anims.create({
+        key: 'walk-right',
+        frames: this.anims.generateFrameNumbers('player-sprites', { start: 8, end: 11 }),
+        frameRate: 10,
+        repeat: -1
+      });
+      this.anims.create({
+        key: 'walk-up',
+        frames: this.anims.generateFrameNumbers('player-sprites', { start: 12, end: 15 }),
+        frameRate: 10,
+        repeat: -1
+      });
+    }
 
     // Инициализируем физику для игрока
     this.physics.add.existing(this.player);
@@ -639,6 +667,20 @@ export class WorldScene extends Phaser.Scene {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(vx * currentSpeed, vy * currentSpeed);
 
+    // Проигрывание анимации в зависимости от направления движения
+    if (vx < 0) {
+      this.player.play('walk-left', true);
+    } else if (vx > 0) {
+      this.player.play('walk-right', true);
+    } else if (vy < 0) {
+      this.player.play('walk-up', true);
+    } else if (vy > 0) {
+      this.player.play('walk-down', true);
+    } else {
+      this.player.stop();
+      this.player.setFrame(0); // Остановка в кадре по умолчанию (стоит прямо)
+    }
+
     if ((vx !== 0 || vy !== 0) && this.netcode) {
       this.sendMoveThrottled();
     }
@@ -1144,12 +1186,13 @@ export class WorldScene extends Phaser.Scene {
   private ensureRemote(id: string, x: number, y: number): void {
     let rect = this.remotePlayers.get(id);
     if (!rect) {
-      rect = this.add.image(x, y, 'player');
-      rect.setScale(0.85);
-      rect.setTint(REMOTE_TINT);
-      rect.setDepth(500);
-      this.remotePlayers.set(id, rect);
+      const newSprite = this.add.sprite(x, y, 'player');
+      newSprite.setScale(0.85);
+      newSprite.setTint(REMOTE_TINT);
+      newSprite.setDepth(500);
+      this.remotePlayers.set(id, newSprite);
       this.updateHUDUI();
+      rect = newSprite;
     }
     rect.x = x;
     rect.y = y;
