@@ -4,8 +4,8 @@
  */
 
 export const MAP_VERSION = 1;
-export const MAP_WIDTH = 30; // Карта мира 30х30 клеток
-export const MAP_HEIGHT = 30;
+export const MAP_WIDTH = 10; // Карта мира 10х10 клеток
+export const MAP_HEIGHT = 10;
 export const TILE_SIZE = 128; // Тайлы 128х128 пикселей
 
 export const TILE_TYPES = [

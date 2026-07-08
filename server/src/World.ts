@@ -1,6 +1,6 @@
 import type { WebSocket } from 'ws';
 import { BOTTLE_TYPES, INVENTORY_SLOTS, type BottleType, type ServerBottle } from '../../shared/economy.js';
-import { cellKey, type MapDocument, type MapEntity } from '../../shared/map.js';
+import { cellKey, MAP_WIDTH, MAP_HEIGHT, type MapDocument, type MapEntity } from '../../shared/map.js';
 
 export type WireMessage = {
   type: string;
@@ -109,7 +109,7 @@ export class World {
     const targetX = spawner.cellX + dx;
     const targetY = spawner.cellY + dy;
 
-    if (targetX < 0 || targetX >= 30 || targetY < 0 || targetY >= 30) return;
+    if (targetX < 0 || targetX >= MAP_WIDTH || targetY < 0 || targetY >= MAP_HEIGHT) return;
 
     const targetKey = cellKey(targetX, targetY);
     if (this.map?.entities?.[targetKey]) return; // уже занята другим объектом
