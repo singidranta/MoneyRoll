@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import { connectNetcode, type NetcodeClient, type NetcodeMessage } from '../systems/Netcode';
 import { loadMap } from '../systems/MapSystem';
-import { BOTTLE_TYPES, type BottleType, type ServerBottle, type ServerKiosk } from '../../../shared/economy';
 import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, type MapDocument } from '../../../shared/map';
+import { BOTTLE_TYPES, type BottleType, type ServerBottle, type ServerKiosk } from '../../../shared/economy';
 
 const MAP_PIXEL_W = MAP_WIDTH * TILE_SIZE; // 30 * 128 = 3840
 const MAP_PIXEL_H = MAP_HEIGHT * TILE_SIZE;
@@ -33,7 +33,6 @@ export class WorldScene extends Phaser.Scene {
   private myId: string | null = null;
   private remotePlayers = new Map<string, Phaser.GameObjects.Rectangle>();
   private snapshotBuffer: SnapshotEntry[] = [];
-
   // Игровая логика и сущности
   private localMoney = 5.0;
   private localInventory: BottleType[] = [];
@@ -130,13 +129,16 @@ export class WorldScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#0a0a0a');
     this.cameras.main.setBounds(0, 0, MAP_PIXEL_W, MAP_PIXEL_H);
 
+    // Кастомный курсор — крестик для попадания в клетки
+    this.input.setDefaultCursor('crosshair');
+
     this.netcode = connectNetcode((msg) => this.handleServerMessage(msg));
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.netcode?.close();
     });
 
-    // Обработка кнопки L для неткод симуляции
+// Обработка кнопки L для неткод симуляции
     kb.on('keydown-L', () => {
       if (this.simulatedLagMs === 0) {
         this.simulatedLagMs = 150;
@@ -216,6 +218,8 @@ export class WorldScene extends Phaser.Scene {
     lines.push('(Radmin VPN: используй Radmin-IP из списка)');
     this.networkPanel.setText(lines.join('\n'));
   }
+
+
 
   // ───── HUD ─────
 

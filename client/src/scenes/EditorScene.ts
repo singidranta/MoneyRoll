@@ -15,18 +15,19 @@ import {
   getSaveStatus,
 } from '../systems/MapSystem';
 
-const PIXEL_WIDTH = MAP_WIDTH * TILE_SIZE;
+const PIXEL_WIDTH = MAP_WIDTH * TILE_SIZE; // 30 * 128 = 3840
 const PIXEL_HEIGHT = MAP_HEIGHT * TILE_SIZE;
 
 export class EditorScene extends Phaser.Scene {
   private mapJson: MapDocument | null = null;
   private currentTile: TileType | null = 'ground';
-  private currentRotation = 0; // в градусах: 0, 90, 180, 270
+  private currentRotation = 0; // 0, 90, 180, 270
 
   private tileImagesMap = new Map<string, Phaser.GameObjects.Image>();
   private ghost!: Phaser.GameObjects.Image;
   private hudText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
+  private coordText!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'Editor' });
@@ -36,20 +37,18 @@ export class EditorScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#0a0a0a');
     this.cameras.main.setBounds(0, 0, PIXEL_WIDTH, PIXEL_HEIGHT);
 
-    // Сетка тонких линий для удобства редактирования
-    const grid = this.add.graphics();
-    grid.lineStyle(1, 0x333333, 0.4);
-    for (let x = 0; x <= MAP_WIDTH; x++) {
-      grid.lineBetween(x * TILE_SIZE, 0, x * TILE_SIZE, PIXEL_HEIGHT);
-    }
-    for (let y = 0; y <= MAP_HEIGHT; y++) {
-      grid.lineBetween(0, y * TILE_SIZE, PIXEL_WIDTH, y * TILE_SIZE);
-    }
-    grid.setDepth(0);
+    // Центрируем камеру на середине карты 30x30
+    this.cameras.main.centerOn(PIXEL_WIDTH / 2, PIXEL_HEIGHT / 2);
 
-    // Тонкая обводка по границам карты (чтобы было видно границы)
+    // Кастомный курсор для точного попадания
+    this.input.setDefaultCursor('crosshair');
+
+    // Рисуем сетку
+    this.drawGridBackground();
+
+    // Тонкая обводка по границам карты
     const border = this.add.graphics();
-    border.lineStyle(2, 0xff6b6b, 0.6);
+    border.lineStyle(3, 0xff6b6b, 0.8);
     border.strokeRect(0, 0, PIXEL_WIDTH, PIXEL_HEIGHT);
     border.setDepth(10);
 
@@ -58,21 +57,31 @@ export class EditorScene extends Phaser.Scene {
       fontFamily: 'monospace',
       fontSize: '14px',
       color: '#ff6b6b',
-      backgroundColor: '#000000aa',
-      padding: { x: 8, y: 4 },
+      backgroundColor: '#000000dd',
+      padding: { x: 8, y: 5 },
     });
     this.hudText.setScrollFactor(0);
     this.hudText.setDepth(2000);
 
-    this.statusText = this.add.text(16, 44, 'loading…', {
+    this.statusText = this.add.text(16, 48, 'Загрузка карты…', {
       fontFamily: 'monospace',
       fontSize: '12px',
       color: '#cccccc',
-      backgroundColor: '#000000aa',
+      backgroundColor: '#000000dd',
       padding: { x: 8, y: 4 },
     });
     this.statusText.setScrollFactor(0);
     this.statusText.setDepth(2000);
+
+    this.coordText = this.add.text(16, 76, 'cell: —, —', {
+      fontFamily: 'monospace',
+      fontSize: '11px',
+      color: '#888888',
+      backgroundColor: '#000000dd',
+      padding: { x: 8, y: 4 },
+    });
+    this.coordText.setScrollFactor(0);
+    this.coordText.setDepth(2000);
 
     // Клавиши
     this.input.keyboard!.on('keydown', this.handleKey, this);
@@ -89,9 +98,32 @@ export class EditorScene extends Phaser.Scene {
     );
   }
 
+  private drawGridBackground(): void {
+    // Minor сетка: 1px, тёмно-серая, каждая клетка (128px)
+    const minor = this.add.graphics();
+    minor.lineStyle(1, 0x222222, 0.5);
+    minor.setDepth(0);
+    for (let x = 0; x <= MAP_WIDTH; x++) {
+      minor.lineBetween(x * TILE_SIZE, 0, x * TILE_SIZE, PIXEL_HEIGHT);
+    }
+    for (let y = 0; y <= MAP_HEIGHT; y++) {
+      minor.lineBetween(0, y * TILE_SIZE, PIXEL_WIDTH, y * TILE_SIZE);
+    }
+
+    // Major сетка: 2px, светло-серая, каждые 10 клеток (1280px)
+    const major = this.add.graphics();
+    major.lineStyle(2, 0x444444, 0.7);
+    major.setDepth(1);
+    for (let x = 0; x <= MAP_WIDTH; x += 10) {
+      major.lineBetween(x * TILE_SIZE, 0, x * TILE_SIZE, PIXEL_HEIGHT);
+    }
+    for (let y = 0; y <= MAP_HEIGHT; y += 10) {
+      major.lineBetween(0, y * TILE_SIZE, PIXEL_WIDTH, y * TILE_SIZE);
+    }
+  }
+
   private async loadInitial(): Promise<void> {
     const map = await loadMap();
-    // Инициализируем rotations, если оно отсутствует
     if (!map.rotations) {
       map.rotations = {};
     }
@@ -102,7 +134,6 @@ export class EditorScene extends Phaser.Scene {
   }
 
   private renderAll(): void {
-    // Очищаем старые спрайты
     for (const img of this.tileImagesMap.values()) {
       img.destroy();
     }
@@ -110,7 +141,7 @@ export class EditorScene extends Phaser.Scene {
 
     if (!this.mapJson) return;
 
-    // Отрисовываем всю карту 30x30
+    // Рендерим 30х30 карту
     for (let x = 0; x < MAP_WIDTH; x++) {
       for (let y = 0; y < MAP_HEIGHT; y++) {
         const key = cellKey(x, y);
@@ -135,9 +166,11 @@ export class EditorScene extends Phaser.Scene {
     const cell = this.worldToCell(pointer.worldX, pointer.worldY);
     if (!cell) {
       if (this.ghost) this.ghost.setVisible(false);
+      this.coordText.setText('cell: —, —');
       return;
     }
     this.showGhost(cell.x, cell.y);
+    this.coordText.setText(`cell: ${cell.x}, ${cell.y}  ·  30×30  ·  128px each`);
   }
 
   private handlePointerDown(pointer: Phaser.Input.Pointer): void {
@@ -147,16 +180,13 @@ export class EditorScene extends Phaser.Scene {
     if (!cell) return;
 
     const key = cellKey(cell.x, cell.y);
-    
-    // Ставим тип тайла и вращение
     this.mapJson.tiles[key] = this.currentTile;
     if (!this.mapJson.rotations) this.mapJson.rotations = {};
     this.mapJson.rotations[key] = this.currentRotation;
 
-    // Мгновенно обновляем существующий спрайт в редакторе
     const existingImg = this.tileImagesMap.get(key);
     const spriteKey = this.currentTile === 'road' ? 'tile-road' : 'tile-ground';
-    
+
     if (existingImg) {
       existingImg.setTexture(spriteKey);
       existingImg.setAngle(this.currentRotation);
@@ -172,7 +202,7 @@ export class EditorScene extends Phaser.Scene {
     // Автосохранение (debounced)
     saveMapDebounced(this.mapJson, 600);
 
-    // Переключаем тип тайла циклично
+    // Цикличная смена выбранного типа тайла
     this.currentTile = NEXT_TILE[this.currentTile];
     this.hudText.setText(this.hudContent());
     this.showGhost(cell.x, cell.y);
@@ -182,7 +212,7 @@ export class EditorScene extends Phaser.Scene {
 
   private handleKey(event: KeyboardEvent): void {
     const keyLower = event.key.toLowerCase();
-    
+
     if (event.key === '1') {
       this.currentTile = 'ground';
       this.hudText.setText(this.hudContent());
@@ -190,11 +220,10 @@ export class EditorScene extends Phaser.Scene {
       this.currentTile = 'road';
       this.hudText.setText(this.hudContent());
     } else if (keyLower === 'r') {
-      // Поворот по часовой стрелке на 90 градусов
+      // Поворот выбранного тайла по часовой стрелке
       this.currentRotation = (this.currentRotation + 90) % 360;
       this.hudText.setText(this.hudContent());
-      
-      // Повернуть ghost если он есть
+
       if (this.ghost) {
         this.ghost.setAngle(this.currentRotation);
       }
@@ -211,7 +240,6 @@ export class EditorScene extends Phaser.Scene {
       }
     }
 
-    // Обновляем текстуру и поворот ghost
     if (this.ghost && this.currentTile) {
       const spriteKey = this.currentTile === 'road' ? 'tile-road' : 'tile-ground';
       this.ghost.setTexture(spriteKey);
