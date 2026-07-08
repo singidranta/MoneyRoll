@@ -87,6 +87,7 @@ let mapDirty = false;
 async function initMap(): Promise<void> {
   await ensureDataDir();
   currentMap = await loadMap();
+  world.setMap(currentMap);
   console.log(
     `[MoneyRoll][server] map loaded: ${Object.keys(currentMap.tiles).length} tiles from ${MAP_FILE}`,
   );
@@ -148,6 +149,7 @@ app.put('/api/map', async (req, res) => {
     rotations[k] = r;
   }
   currentMap = { ...body, tiles, rotations, version: 1 };
+  world.setMap(currentMap);
   mapDirty = true;
   await flushMap();
   res.json({ ok: true, tiles: Object.keys(tiles).length });
@@ -165,13 +167,16 @@ wss.on('connection', (ws, req) => {
 
   world.add(id, ws);
 
-  // Привет + стартовый список игроков, бутылок и киосков.
+  // Привет + стартовый список игроков, бутылок, киосков, денег и инвентаря.
+  const playerClient = world.getClient(id);
   ws.send(JSON.stringify({
     type: 'welcome',
     id,
     players: world.snapshot(id),
     bottles: world.getBottles(),
-    kiosks: world.getKiosks()
+    kiosks: world.getKiosks(),
+    money: playerClient?.money ?? 5.0,
+    inventory: playerClient?.inventory ?? Array(12).fill(null)
   }));
 
   // Сообщаем остальным, что новый игрок появился.
