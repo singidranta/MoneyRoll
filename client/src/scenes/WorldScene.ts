@@ -135,7 +135,9 @@ export class WorldScene extends Phaser.Scene {
     this.physics.add.existing(this.player);
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setCollideWorldBounds(true);
-    body.setSize(48, 48); // уменьшаем хитбокс для комфортного прохода между клетками
+    // Профессиональный хитбокс у ног персонажа (для красивой глубины и легкого обхода углов!)
+    body.setSize(36, 24);
+    body.setOffset(46, 100);
 
     // Инициализируем статическую группу для физических коллизий (Стены, Квартиры)
     this.obstaclesGroup = this.physics.add.staticGroup();
@@ -317,6 +319,26 @@ export class WorldScene extends Phaser.Scene {
         obstacle.setScale(1.0);
         obstacle.setAngle(entity.rotation);
         obstacle.setDepth(90);
+        
+        const oBody = obstacle.body as Phaser.Physics.Arcade.StaticBody;
+
+        if (entity.type === 'wall') {
+          // Тонкая стена-забор: хитбокс зависит от угла поворота!
+          if (entity.rotation === 90 || entity.rotation === 270) {
+            // Вертикальный забор
+            oBody.setSize(32, 128);
+            oBody.setOffset(48, 0);
+          } else {
+            // Горизонтальный забор
+            oBody.setSize(128, 32);
+            oBody.setOffset(0, 48);
+          }
+        } else {
+          // Квартиры / здания: сочный хитбокс, позволяющий игроку заходить слегка за крышу здания
+          oBody.setSize(116, 110);
+          oBody.setOffset(6, 18);
+        }
+
         obstacle.refreshBody(); // Обновляем физическое тело статического объекта
       } else if (entity.type === 'npc') {
         const npcContainer = this.add.container(px, py);
