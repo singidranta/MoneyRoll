@@ -1,16 +1,16 @@
 import Phaser from 'phaser';
 import { connectNetcode, type NetcodeClient, type NetcodeMessage } from '../systems/Netcode';
 import { loadMap } from '../systems/MapSystem';
-import { BOTTLE_TYPES, MAX_INVENTORY_WEIGHT, INVENTORY_SLOTS, type BottleType, type ServerBottle } from '../../../shared/economy';
+import { BOTTLE_TYPES, INVENTORY_SLOTS, type BottleType, type ServerBottle } from '../../../shared/economy';
 import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, type MapDocument } from '../../../shared/map';
 
 const MAP_PIXEL_W = MAP_WIDTH * TILE_SIZE; // 30 * 128 = 3840
 const MAP_PIXEL_H = MAP_HEIGHT * TILE_SIZE;
-const MOVE_SPEED = 240;
 const SEND_INTERVAL_MS = 50;
 const SNAPSHOT_INTERP_DELAY_MS = 100;
 const REMOTE_TINT = 0xffaacc; // Розовый оттенок для других игроков
 const DEFAULT_SPAWN = { x: 400, y: 300 };
+const MOVE_SPEED = 240;
 
 type PeerSnapshot = { id: string; x: number; y: number };
 type SnapshotEntry = {
@@ -21,7 +21,7 @@ type SnapshotEntry = {
 type NetInfo = { ips: Array<{ iface: string; ip: string }>; port: number };
 
 export class WorldScene extends Phaser.Scene {
-  private player!: Phaser.GameObjects.Image; // Персонаж теперь КАРТИНКА, а не квадрат!
+  private player!: Phaser.GameObjects.Image; // Персонаж теперь сочный WebP спрайт
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<string, Phaser.Input.Keyboard.Key>;
   private keyE!: Phaser.Input.Keyboard.Key;
@@ -32,13 +32,22 @@ export class WorldScene extends Phaser.Scene {
   private networkPanel!: Phaser.GameObjects.Text;
   private lastSentAt = 0;
   private myId: string | null = null;
-  private remotePlayers = new Map<string, Phaser.GameObjects.Image>(); // Другие игроки тоже картинки!
+  private remotePlayers = new Map<string, Phaser.GameObjects.Image>();
   private snapshotBuffer: SnapshotEntry[] = [];
 
   // Игровая логика и сущности
   private localMoney = 5.0;
   private localInventory: (BottleType | null)[] = Array(INVENTORY_SLOTS).fill(null);
   private currentWeight = 0.0;
+  private backpackTier = 1; // 1 = Пакет, 2 = Сумка Adidas, 3 = Рюкзак туриста
+
+  // Система выносливости (Stamina)
+  private stamina = 100.0;
+  private isExhausted = false;
+
+  // Временные баффы
+  private energyDrinkBuffTimer = 0.0; // Суперскорость
+  private shawarmaBuffTimer = 0.0; // Безлимитная энергия
 
   private mapJson: MapDocument | null = null;
   private groundTileSprite?: Phaser.GameObjects.TileSprite;
@@ -46,8 +55,10 @@ export class WorldScene extends Phaser.Scene {
   private bottlesMap = new Map<string, Phaser.GameObjects.Image>();
   private kiosksSpritesMap = new Map<string, Phaser.GameObjects.GameObject>();
   private npcSpritesList: Phaser.GameObjects.GameObject[] = [];
-  private buildingSpritesList: Phaser.GameObjects.GameObject[] = [];
   private staticTileImages: Phaser.GameObjects.Image[] = [];
+
+  // Физика (Препятствия/Коллизии)
+  private obstaclesGroup!: Phaser.Physics.Arcade.StaticGroup;
 
   // Неткод-фишка: симуляция пинга
   private simulatedLagMs = 0;
@@ -55,9 +66,11 @@ export class WorldScene extends Phaser.Scene {
   // HTML UI элементы
   private hudOverlayEl?: HTMLDivElement;
   private inventoryEl?: HTMLDivElement;
+  private foodCartEl?: HTMLDivElement;
 
   private isInventoryOpen = false;
   private nearKioskId: string | null = null;
+  private nearFoodCartEntity: any = null; // Текущий ларёк рядом
 
   constructor() {
     super({ key: 'World' });
@@ -87,8 +100,18 @@ export class WorldScene extends Phaser.Scene {
 
     // Персонаж — сочный детализированный WebP спрайт!
     this.player = this.add.image(DEFAULT_SPAWN.x, DEFAULT_SPAWN.y, 'player');
-    this.player.setScale(0.85); // Масштабируем спрайт
+    this.player.setScale(0.85);
     this.player.setDepth(500);
+
+    // Инициализируем физику для игрока
+    this.physics.add.existing(this.player);
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    body.setCollideWorldBounds(true);
+    body.setSize(48, 48); // уменьшаем хитбокс для комфортного прохода между клетками
+
+    // Инициализируем статическую группу для физических коллизий (Стены, Квартиры)
+    this.obstaclesGroup = this.physics.add.staticGroup();
+    this.physics.add.collider(this.player, this.obstaclesGroup);
 
     // Панель «поделиться с друзьями» — справа вверху
     this.networkPanel = this.add.text(0, 0, '[network…]', {
@@ -165,6 +188,15 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  private renderNetworkPanel(info: NetInfo): void {
+    const lines: string[] = ['— MULTIPLAYER ACCESS —'];
+    for (const { iface, ip } of info.ips) {
+      lines.push(`http://${ip}:${info.port}  (${iface})`);
+    }
+    lines.push('(Для игры с друзьями: используй Radmin VPN)');
+    this.networkPanel.setText(lines.join('\n'));
+  }
+
   private async loadMapData(): Promise<void> {
     try {
       this.mapJson = await loadMap();
@@ -178,7 +210,7 @@ export class WorldScene extends Phaser.Scene {
   private renderMapTiles(): void {
     if (!this.mapJson) return;
 
-    // Очищаем старые тайлы, если были
+    // Очищаем старые тайлы
     for (const img of this.staticTileImages) {
       img.destroy();
     }
@@ -194,10 +226,8 @@ export class WorldScene extends Phaser.Scene {
         const px = x * TILE_SIZE + TILE_SIZE / 2;
         const py = y * TILE_SIZE + TILE_SIZE / 2;
         
-        // Ключи спрайтов соответствуют типам тайлов: 'tile-ground-grass', 'tile-road-straight' и т.д.
         const spriteKey = `tile-${type}`;
         
-        // Не перерисовываем базовую траву, чтобы сэкономить перформанс, но рисуем всё остальное
         if (type !== 'ground-grass') {
           const img = this.add.image(px, py, spriteKey);
           img.setDepth(1);
@@ -223,10 +253,8 @@ export class WorldScene extends Phaser.Scene {
     }
     this.npcSpritesList = [];
 
-    for (const sprite of this.buildingSpritesList) {
-      sprite.destroy();
-    }
-    this.buildingSpritesList = [];
+    // Полностью очищаем физическую группу коллизий, чтобы пересоздать её без дубликатов
+    this.obstaclesGroup.clear(true, true);
 
     // Рендерим сущности из единой карты
     for (const entity of Object.values(this.mapJson.entities)) {
@@ -246,6 +274,22 @@ export class WorldScene extends Phaser.Scene {
         glow.setDepth(10);
 
         this.kiosksSpritesMap.set(entity.id, kioskSprite);
+      } else if (entity.type === 'food-cart') {
+        // Ларёк с шаурмой
+        const kioskSprite = this.add.image(px, py, 'food-cart');
+        kioskSprite.setScale(1.0);
+        kioskSprite.setDepth(100);
+        kioskSprite.setAngle(entity.rotation);
+
+        this.kiosksSpritesMap.set(entity.id, kioskSprite);
+      } else if (entity.type === 'apartment-1' || entity.type === 'apartment-2' || entity.type === 'wall' || entity.type === 'building') {
+        // Твердые препятствия (Квартиры, Стены) — добавляем их в физическую группу статических препятствий!
+        const spriteKey = entity.type;
+        const obstacle = this.obstaclesGroup.create(px, py, spriteKey);
+        obstacle.setScale(1.0);
+        obstacle.setAngle(entity.rotation);
+        obstacle.setDepth(90);
+        obstacle.refreshBody(); // Обновляем физическое тело статического объекта
       } else if (entity.type === 'npc') {
         const npcContainer = this.add.container(px, py);
         npcContainer.setDepth(101);
@@ -263,33 +307,8 @@ export class WorldScene extends Phaser.Scene {
 
         npcContainer.add([body, label]);
         this.npcSpritesList.push(npcContainer);
-      } else if (entity.type === 'building') {
-        const buildContainer = this.add.container(px, py);
-        buildContainer.setDepth(99);
-
-        const body = this.add.rectangle(0, 0, 110, 110, 0x777788);
-        body.setStrokeStyle(3, 0xbbbbcc);
-
-        const label = this.add.text(0, 0, entity.properties.label || 'ЗДАНИЕ', {
-          fontFamily: 'monospace',
-          fontSize: '13px',
-          color: '#ffffff',
-          fontStyle: 'bold'
-        }).setOrigin(0.5);
-
-        buildContainer.add([body, label]);
-        this.buildingSpritesList.push(buildContainer);
       }
     }
-  }
-
-  private renderNetworkPanel(info: NetInfo): void {
-    const lines: string[] = ['— MULTIPLAYER ACCESS —'];
-    for (const { iface, ip } of info.ips) {
-      lines.push(`http://${ip}:${info.port}  (${iface})`);
-    }
-    lines.push('(Для игры с друзьями: используй Radmin VPN)');
-    this.networkPanel.setText(lines.join('\n'));
   }
 
   // ───── Netcode ─────
@@ -312,10 +331,10 @@ export class WorldScene extends Phaser.Scene {
           
           this.localMoney = msg.money as number;
           this.localInventory = msg.inventory as (BottleType | null)[];
+          this.backpackTier = (msg.backpackTier as number) || 1;
           this.updateInventoryUI();
           this.updateHUDUI();
 
-          // Рендерим игроков
           if (Array.isArray(msg.players)) {
             const initial = new Map<string, { x: number; y: number }>();
             for (const p of msg.players) {
@@ -327,7 +346,6 @@ export class WorldScene extends Phaser.Scene {
             this.snapshotBuffer.push({ localT: performance.now(), players: initial });
           }
 
-          // Рендерим бутылки
           if (Array.isArray(msg.bottles)) {
             for (const b of msg.bottles) {
               this.spawnBottleClient(b as ServerBottle);
@@ -338,10 +356,9 @@ export class WorldScene extends Phaser.Scene {
       }
 
       case 'map-reload': {
-        console.log('[MoneyRoll] Карта была обновлена в редакторе! Авто-перезагрузка...');
+        console.log('[MoneyRoll] Карта была обновлена! Перерисовываем...');
         void this.loadMapData();
         
-        // Перерисовываем бутылки
         for (const img of this.bottlesMap.values()) {
           img.destroy();
         }
@@ -441,7 +458,6 @@ export class WorldScene extends Phaser.Scene {
           this.removeBottleClient(bottleId);
           this.showFloatingText('ОПЕРЕДИЛИ!', this.player.x, this.player.y - 30, '#ff3333');
         } else {
-          // Восстанавливаем видимость
           const img = this.bottlesMap.get(bottleId);
           if (img) img.setVisible(true);
           this.showFloatingText(text, this.player.x, this.player.y - 30, '#ff9900');
@@ -473,8 +489,678 @@ export class WorldScene extends Phaser.Scene {
         break;
       }
 
+      // Новые обработчики еды и улучшений
+      case 'upgrade-success': {
+        const tier = msg.backpackTier as number;
+        const money = msg.money as number;
+        const text = msg.message as string;
+
+        this.backpackTier = tier;
+        this.localMoney = money;
+
+        this.updateInventoryUI();
+        this.updateHUDUI();
+        this.updateFoodCartUI(); // Обновляем цены/кнопки в магазине
+
+        this.showFloatingText(text, this.player.x, this.player.y - 40, '#ffd700');
+        this.cameras.main.shake(200, 0.008);
+        break;
+      }
+
+      case 'upgrade-failed': {
+        const text = msg.message as string;
+        this.showFloatingText(text, this.player.x, this.player.y - 30, '#ff3333');
+        break;
+      }
+
+      case 'buy-food-success': {
+        const item = msg.itemType as string;
+        const money = msg.money as number;
+        const text = msg.message as string;
+
+        this.localMoney = money;
+        this.updateHUDUI();
+
+        if (item === 'shawarma') {
+          this.stamina = 100.0;
+          this.isExhausted = false;
+          this.shawarmaBuffTimer = 20.0; // Безлимитная выносливость на 20 сек
+        } else if (item === 'energy') {
+          this.energyDrinkBuffTimer = 30.0; // Суперскорость на 30 сек
+        }
+
+        this.showFloatingText(text, this.player.x, this.player.y - 40, '#7cfc00');
+        break;
+      }
+
+      case 'buy-food-failed': {
+        const text = msg.message as string;
+        this.showFloatingText(text, this.player.x, this.player.y - 30, '#ff3333');
+        break;
+      }
+
       default:
         console.log('[MoneyRoll] ws ←', msg);
+    }
+  }
+
+  // ───── Spawners ─────
+
+  private spawnBottleClient(b: ServerBottle): void {
+    if (this.bottlesMap.has(b.id)) return;
+
+    const def = BOTTLE_TYPES[b.type];
+    if (!def) return;
+
+    const img = this.add.image(b.x, b.y, def.spriteKey);
+    img.setScale(0.85);
+    img.setDepth(100);
+
+    this.tweens.add({
+      targets: img,
+      y: b.y - 8,
+      duration: 1200 + Math.random() * 400,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+
+    this.bottlesMap.set(b.id, img);
+  }
+
+  private removeBottleClient(id: string): void {
+    const img = this.bottlesMap.get(id);
+    if (img) {
+      this.tweens.add({
+        targets: img,
+        scale: 0.1,
+        alpha: 0,
+        angle: 180,
+        duration: 200,
+        onComplete: () => {
+          img.destroy();
+        }
+      });
+      this.bottlesMap.delete(id);
+    }
+  }
+
+  // ───── Movement & Interaction ─────
+
+  update(_time: number, delta: number): void {
+    const now = performance.now();
+    const dt = Math.min(delta, 100) / 1000;
+
+    // Снижаем таймеры баффов
+    if (this.energyDrinkBuffTimer > 0) this.energyDrinkBuffTimer -= dt;
+    if (this.shawarmaBuffTimer > 0) this.shawarmaBuffTimer -= dt;
+
+    let vx = 0;
+    let vy = 0;
+    if (this.cursors.left?.isDown || this.wasd.A?.isDown) vx -= 1;
+    if (this.cursors.right?.isDown || this.wasd.D?.isDown) vx += 1;
+    if (this.cursors.up?.isDown || this.wasd.W?.isDown) vy -= 1;
+    if (this.cursors.down?.isDown || this.wasd.S?.isDown) vy += 1;
+
+    if (vx !== 0 && vy !== 0) {
+      const inv = 1 / Math.hypot(vx, vy);
+      vx *= inv;
+      vy *= inv;
+    }
+
+    // Рассчитываем скорость (Базовая / Спринт / Баффы)
+    const isSprinting = this.input.keyboard!.addKey('SHIFT').isDown && (vx !== 0 || vy !== 0) && !this.isExhausted;
+    
+    let currentSpeed = MOVE_SPEED; // 240
+    if (this.energyDrinkBuffTimer > 0) {
+      currentSpeed = 440; // Суперскорость под баффом ягуара!
+    } else if (isSprinting) {
+      currentSpeed = 350; // Обычный спринт
+    }
+
+    // Логика выносливости (Stamina)
+    if (isSprinting && this.shawarmaBuffTimer <= 0) {
+      // Расход энергии зависит от веса мешка!
+      const drainRate = 18 * (1 + this.currentWeight / (this.backpackTier === 1 ? 8.0 : this.backpackTier === 2 ? 15.0 : 30.0));
+      this.stamina = Math.max(0, this.stamina - drainRate * dt);
+      if (this.stamina === 0) {
+        this.isExhausted = true;
+        this.showFloatingText('УСТАЛ! Передохни!', this.player.x, this.player.y - 30, '#ff3333');
+      }
+    } else {
+      // Восстановление энергии
+      this.stamina = Math.min(100, this.stamina + 12 * dt);
+      if (this.isExhausted && this.stamina >= 20) {
+        this.isExhausted = false; // Можно снова бегать!
+      }
+    }
+
+    // Движение через Arcade Physics! Полностью блокирует хождение сквозь Стены и Квартиры!
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(vx * currentSpeed, vy * currentSpeed);
+
+    if ((vx !== 0 || vy !== 0) && this.netcode) {
+      this.sendMoveThrottled();
+    }
+
+    // Горячие клавиши инвентаря
+    if (Phaser.Input.Keyboard.JustDown(this.keyI) || Phaser.Input.Keyboard.JustDown(this.keyTab)) {
+      this.toggleInventory();
+    }
+
+    // Обновляем HUD и полоску выносливости
+    this.updateHUDUI();
+
+    // ───── Подбор бутылок при соприкосновении ─────
+    for (const [id, img] of this.bottlesMap.entries()) {
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, img.x, img.y);
+      if (dist < 48) {
+        if (img.visible) {
+          img.setVisible(false);
+          this.sendGameMessage({ type: 'pickup-bottle', bottleId: id });
+        }
+      }
+    }
+
+    // ───── Взаимодействие с объектами карты (Киоски, Ларьки Шаурмы) ─────
+    let activeKioskId: string | null = null;
+    let activeFoodCartEntity: any = null;
+
+    if (this.mapJson && this.mapJson.entities) {
+      for (const entity of Object.values(this.mapJson.entities)) {
+        const kx = entity.cellX * TILE_SIZE + TILE_SIZE / 2;
+        const ky = entity.cellY * TILE_SIZE + TILE_SIZE / 2;
+        const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, kx, ky);
+
+        if (dist < 100) {
+          if (entity.type === 'kiosk') {
+            activeKioskId = entity.id;
+          } else if (entity.type === 'food-cart') {
+            activeFoodCartEntity = entity;
+          }
+          break;
+        }
+      }
+    }
+
+    this.nearKioskId = activeKioskId;
+    this.nearFoodCartEntity = activeFoodCartEntity;
+
+    // Всплывающие плашки на экране
+    const kioskPrompt = document.getElementById('kiosk-prompt-indicator');
+    if (kioskPrompt) {
+      kioskPrompt.style.display = this.nearKioskId ? 'block' : 'none';
+      if (this.nearKioskId && Phaser.Input.Keyboard.JustDown(this.keyE)) {
+        this.openKioskUI();
+      }
+    }
+
+    const foodPrompt = document.getElementById('food-cart-prompt-indicator');
+    if (foodPrompt) {
+      foodPrompt.style.display = this.nearFoodCartEntity ? 'block' : 'none';
+      if (this.nearFoodCartEntity && Phaser.Input.Keyboard.JustDown(this.keyE)) {
+        this.openFoodCartUI();
+      }
+    } else if (this.nearFoodCartEntity) {
+      // Если плашки нет, закрываем меню при отдалении
+      this.closeFoodCartUI();
+    }
+
+    this.renderRemoteInterpolated(now);
+  }
+
+  private sendMoveThrottled(): void {
+    const now = performance.now();
+    if (now - this.lastSentAt < SEND_INTERVAL_MS) return;
+    this.lastSentAt = now;
+    this.sendGameMessage({ type: 'move', x: this.player.x, y: this.player.y });
+  }
+
+  private sendGameMessage(msg: { type: string; [key: string]: unknown }): void {
+    if (!this.netcode) return;
+    if (this.simulatedLagMs > 0) {
+      setTimeout(() => {
+        this.netcode?.send(msg);
+      }, this.simulatedLagMs);
+    } else {
+      this.netcode.send(msg);
+    }
+  }
+
+  // ───── HTML Overlay Managers ─────
+
+  private createHTMLHUD(): void {
+    this.removeHTMLHUD();
+
+    const hud = document.createElement('div');
+    hud.id = 'game-hud-overlay';
+    hud.style.position = 'fixed';
+    hud.style.left = '16px';
+    hud.style.top = '16px';
+    hud.style.background = 'rgba(10,10,10,0.85)';
+    hud.style.color = '#7cfc00';
+    hud.style.border = '2px solid #7cfc00';
+    hud.style.borderRadius = '6px';
+    hud.style.padding = '12px 16px';
+    hud.style.fontFamily = 'monospace';
+    hud.style.fontSize = '14px';
+    hud.style.zIndex = '9999';
+    hud.style.lineHeight = '1.5';
+    hud.style.boxShadow = '0 2px 10px rgba(0,0,0,0.5)';
+
+    hud.innerHTML = `
+      <div style="font-weight:bold; font-size:16px; margin-bottom:6px; color:#fff; display:flex; align-items:center;">
+        <img src="/assets/chars/player.webp" style="width:24px; height:24px; margin-right:8px; border-radius:50%;" /> MONEYROLL HUD
+      </div>
+      <div id="hud-money" style="display:flex; align-items:center; margin-bottom:4px; font-weight:bold;">
+        <img src="/assets/icons/coin.webp" style="width:16px; height:16px; margin-right:6px;" /> Баланс: $5.00
+      </div>
+      <div id="hud-weight">Сумка: Пакет (0.0 / 8.0 кг)</div>
+      
+      <!-- Полоска выносливости (Stamina) -->
+      <div style="margin-top:6px;">
+        <span style="font-size:11px; color:#aaa; display:block; margin-bottom:2px;">⚡ Энергия (Бег: зажми Shift):</span>
+        <div style="width: 150px; background: #333; height: 8px; border-radius: 4px; overflow:hidden; border:1px solid #555;">
+          <div id="hud-stamina-bar" style="background:#ffd700; width:100%; height:100%; transition: width 0.1s;"></div>
+        </div>
+      </div>
+
+      <div style="font-size:12px; color:#aaa; margin-top:8px;">Игроков рядом: <span id="hud-players">1</span></div>
+      <div style="font-size:11px; color:#ff9900; margin-top:2px;">Клавиша L: лаг-симулятор (${this.simulatedLagMs}мс)</div>
+      
+      <button id="btn-toggle-inv" style="margin-top:10px; width:100%; padding:6px; background:#7cfc00; color:#050505; border:none; border-radius:3px; font-weight:bold; cursor:pointer;">ИНВЕНТАРЬ (I)</button>
+      
+      <!-- Индикатор автомата сдачи -->
+      <div id="kiosk-prompt-indicator" style="display:none; margin-top:10px; background:rgba(255,215,0,0.2); color:#ffd700; border:1px solid #ffd700; padding:6px; border-radius:3px; text-align:center; font-weight:bold; animation: pulse 1s infinite alternate;">
+        [E] ОТКРЫТЬ АВТОМАТ СДАЧИ
+      </div>
+
+      <!-- Индикатор Ларька Шаурмы -->
+      <div id="food-cart-prompt-indicator" style="display:none; margin-top:10px; background:rgba(0,204,255,0.2); color:#00ccff; border:1px solid #00ccff; padding:6px; border-radius:3px; text-align:center; font-weight:bold; animation: pulse 1s infinite alternate;">
+        [E] ЗАЙТИ К АШОТУ (ШАУРМА / СУМКИ)
+      </div>
+    `;
+
+    document.body.appendChild(hud);
+    this.hudOverlayEl = hud;
+
+    hud.querySelector('#btn-toggle-inv')?.addEventListener('click', () => {
+      this.toggleInventory();
+    });
+  }
+
+  private createHTMLInventory(): void {
+    this.removeHTMLInventory();
+
+    const inv = document.createElement('div');
+    inv.id = 'game-inventory-panel';
+    inv.style.position = 'fixed';
+    inv.style.left = '50%';
+    inv.style.top = '50%';
+    inv.style.transform = 'translate(-50%, -50%)';
+    inv.style.background = 'rgba(20,20,20,0.98)';
+    inv.style.border = '3px solid #7cfc00';
+    inv.style.borderRadius = '8px';
+    inv.style.padding = '18px';
+    inv.style.fontFamily = 'monospace';
+    inv.style.zIndex = '99999';
+    inv.style.boxShadow = '0 5px 25px rgba(0,0,0,0.8)';
+    inv.style.display = 'none';
+    inv.style.pointerEvents = 'auto';
+
+    inv.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid #333; padding-bottom:6px;">
+        <span style="font-weight:bold; font-size:15px; color:#7cfc00; letter-spacing:1px; display:flex; align-items:center;">
+          🎒 МОЙ РЮКЗАК (3х4 слота)
+        </span>
+        <button id="btn-close-inv" style="background:none; border:none; color:#ff4444; font-weight:bold; cursor:pointer; font-size:16px;">[X]</button>
+      </div>
+      
+      <div id="inventory-grid" style="display:grid; grid-template-columns: repeat(4, 72px); grid-template-rows: repeat(3, 72px); gap: 10px; margin-bottom:12px;">
+        <!-- Сюда вставляются слоты динамически -->
+      </div>
+      
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#888;">
+        <span>Клик по предмету — сдать (у автомата)</span>
+        <span id="inv-weight-status">Вес: 0.0 / 8.0 кг</span>
+      </div>
+    `;
+
+    document.body.appendChild(inv);
+    this.inventoryEl = inv;
+
+    inv.querySelector('#btn-close-inv')?.addEventListener('click', () => {
+      this.toggleInventory(false);
+    });
+
+    this.updateInventoryUI();
+  }
+
+  private toggleInventory(force?: boolean): void {
+    this.isInventoryOpen = force !== undefined ? force : !this.isInventoryOpen;
+    if (this.inventoryEl) {
+      this.inventoryEl.style.display = this.isInventoryOpen ? 'block' : 'none';
+    }
+  }
+
+  private openKioskUI(): void {
+    if (!this.nearKioskId) return;
+    this.toggleInventory(true); // Всегда открываем инвентарь при открытии киоска
+
+    this.removeKioskUI();
+
+    const kiosk = document.createElement('div');
+    kiosk.id = 'game-kiosk-panel';
+    kiosk.style.position = 'fixed';
+    kiosk.style.left = '10%';
+    kiosk.style.top = '50%';
+    kiosk.style.transform = 'translateY(-50%)';
+    kiosk.style.background = 'rgba(15,15,15,0.98)';
+    kiosk.style.border = '3px solid #ffd700';
+    kiosk.style.borderRadius = '8px';
+    kiosk.style.padding = '15px';
+    kiosk.style.width = '310px';
+    kiosk.style.fontFamily = 'monospace';
+    kiosk.style.zIndex = '99999';
+    kiosk.style.boxShadow = '0 5px 25px rgba(0,0,0,0.8)';
+    kiosk.style.pointerEvents = 'auto';
+
+    kiosk.innerHTML = `
+      <h3 style="margin-top:0; border-bottom:2px solid #ffd700; padding-bottom:6px; color:#ffd700; text-align:center;">🏪 АВТОМАТ СДАЧИ БУТЫЛОК</h3>
+      <p style="font-size:12px; color:#ccc; line-height:1.4; margin-bottom:12px; text-align:center;">
+        Сдавай стеклотару в автомат! Кликни по бутылке в инвентаре, чтобы сдать её поштучно, либо нажми кнопку ниже.
+      </p>
+      
+      <button id="btn-recycle-all" style="width:100%; padding:10px; background:#ffd700; color:#111; border:none; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px; letter-spacing:1px; margin-bottom:8px;">♻️ СДАТЬ ВСЕ БУТЫЛКИ</button>
+      <button id="btn-close-kiosk" style="width:100%; padding:6px; background:#444; color:#fff; border:none; border-radius:4px; cursor:pointer;">Закрыть</button>
+    `;
+
+    document.body.appendChild(kiosk);
+
+    kiosk.querySelector('#btn-recycle-all')?.addEventListener('click', () => {
+      this.sendGameMessage({ type: 'sell-all-bottles' });
+    });
+
+    kiosk.querySelector('#btn-close-kiosk')?.addEventListener('click', () => {
+      this.closeKioskUI();
+    });
+  }
+
+  private closeKioskUI(): void {
+    this.removeKioskUI();
+  }
+
+  // ───── Ларёк Шаурмы и Магазин Улучшений ─────
+
+  private openFoodCartUI(): void {
+    if (!this.nearFoodCartEntity) return;
+    this.toggleInventory(true); // Открываем рюкзак для наглядности веса
+
+    this.removeFoodCartUI();
+
+    const cart = document.createElement('div');
+    cart.id = 'game-food-cart-panel';
+    cart.style.position = 'fixed';
+    cart.style.right = '10%';
+    cart.style.top = '50%';
+    cart.style.transform = 'translateY(-50%)';
+    cart.style.background = 'rgba(15,15,15,0.98)';
+    cart.style.border = '3px solid #00ccff';
+    cart.style.borderRadius = '8px';
+    cart.style.padding = '15px';
+    cart.style.width = '320px';
+    cart.style.fontFamily = 'monospace';
+    cart.style.zIndex = '99999';
+    cart.style.boxShadow = '0 5px 25px rgba(0,0,0,0.8)';
+    cart.style.pointerEvents = 'auto';
+
+    document.body.appendChild(cart);
+    this.foodCartEl = cart;
+
+    this.updateFoodCartUI();
+  }
+
+  private updateFoodCartUI(): void {
+    if (!this.foodCartEl) return;
+
+    // В зависимости от текущего тира рюкзака, показываем доступные апгрейды
+    const upgradeText = this.backpackTier === 1 
+      ? `<button id="btn-upgrade-bag-2" style="width:100%; padding:8px; background:#00ccff; color:#000; border:none; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:8px;">👜 Купить Сумку Adidas ($15.00)</button>` 
+      : this.backpackTier === 2 
+      ? `<button id="btn-upgrade-bag-3" style="width:100%; padding:8px; background:#7cfc00; color:#000; border:none; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:8px;">🎒 Купить Рюкзак туриста ($45.00)</button>`
+      : `<div style="text-align:center; padding:8px; background:#333; color:#aaa; border-radius:4px; margin-bottom:8px;">У тебя максимальный Рюкзак!</div>`;
+
+    this.foodCartEl.innerHTML = `
+      <h3 style="margin-top:0; border-bottom:2px solid #00ccff; padding-bottom:6px; color:#00ccff; text-align:center; display:flex; align-items:center; justify-content:center;">
+        <img src="/assets/props/flat/kiosk/food-cart.webp" style="width:24px; height:24px; margin-right:8px;" /> ШАУРМА У АШОТА
+      </h3>
+      
+      <div style="margin-bottom:12px;">
+        <strong style="color:#ffd700; display:block; margin-bottom:4px;">🍕 ГОРЯЧЕЕ ПИТАНИЕ:</strong>
+        <button id="btn-buy-shawa" style="width:100%; padding:8px; background:#ffd700; color:#000; border:none; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between;">
+          <span>🌯 Сытная Шаурма</span>
+          <span>$1.50</span>
+        </button>
+        <span style="font-size:10px; color:#aaa; display:block; margin-bottom:8px;">Восстанавливает 100% энергии + 20 сек бесконечного спринта!</span>
+
+        <button id="btn-buy-energy" style="width:100%; padding:8px; background:#ff6b6b; color:#fff; border:none; border-radius:4px; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between;">
+          <span>⚡ Энергетик "Ягуар"</span>
+          <span>$3.00</span>
+        </button>
+        <span style="font-size:10px; color:#aaa; display:block;">Даёт безумную суперскорость бега на 30 секунд!</span>
+      </div>
+
+      <div style="margin-bottom:12px; border-top:1px solid #333; padding-top:10px;">
+        <strong style="color:#7cfc00; display:block; margin-bottom:6px;">🎒 УЛУЧШИТЬ СУМКУ:</strong>
+        ${upgradeText}
+        <span style="font-size:10px; color:#aaa; display:block;">Увеличение лимита веса: Пакет (8кг) ➔ Сумка (15кг) ➔ Рюкзак (30кг)</span>
+      </div>
+
+      <button id="btn-close-food" style="width:100%; padding:6px; background:#444; color:#fff; border:none; border-radius:4px; cursor:pointer; margin-top:4px;">Выйти из ларька</button>
+    `;
+
+    // Слушатели кликов
+    this.foodCartEl.querySelector('#btn-buy-shawa')?.addEventListener('click', () => {
+      this.sendGameMessage({ type: 'buy-food', itemType: 'shawarma' });
+    });
+
+    this.foodCartEl.querySelector('#btn-buy-energy')?.addEventListener('click', () => {
+      this.sendGameMessage({ type: 'buy-food', itemType: 'energy' });
+    });
+
+    this.foodCartEl.querySelector('#btn-upgrade-bag-2')?.addEventListener('click', () => {
+      this.sendGameMessage({ type: 'upgrade-backpack', tier: 2 });
+    });
+
+    this.foodCartEl.querySelector('#btn-upgrade-bag-3')?.addEventListener('click', () => {
+      this.sendGameMessage({ type: 'upgrade-backpack', tier: 3 });
+    });
+
+    this.foodCartEl.querySelector('#btn-close-food')?.addEventListener('click', () => {
+      this.closeFoodCartUI();
+    });
+  }
+
+  private closeFoodCartUI(): void {
+    this.removeFoodCartUI();
+  }
+
+  private removeFoodCartUI(): void {
+    const existing = document.getElementById('game-food-cart-panel');
+    if (existing) existing.remove();
+    this.foodCartEl = undefined;
+  }
+
+  // ───── HUD ─────
+
+  private updateHUDUI(): void {
+    if (!this.hudOverlayEl) return;
+
+    const maxLimit = this.backpackTier === 1 ? 8.0 : this.backpackTier === 2 ? 15.0 : 30.0;
+    const bagName = this.backpackTier === 1 ? 'Пакет' : this.backpackTier === 2 ? 'Сумка Adidas' : 'Рюкзак туриста';
+
+    const moneyEl = this.hudOverlayEl.querySelector('#hud-money');
+    if (moneyEl) moneyEl.innerHTML = `<img src="/assets/icons/coin.webp" style="width:18px; height:18px; margin-right:6px;" /> Баланс: <strong style="color:#fff;">$${this.localMoney.toFixed(2)}</strong>`;
+
+    const weightEl = this.hudOverlayEl.querySelector('#hud-weight');
+    if (weightEl) weightEl.innerHTML = `Сумка: <strong style="color:#fff;">${bagName}</strong> (${this.currentWeight.toFixed(1)} / ${maxLimit} кг)`;
+
+    const weightBar = this.hudOverlayEl.querySelector('#hud-weight-bar') as HTMLDivElement;
+    if (weightBar) {
+      const pct = Math.min((this.currentWeight / maxLimit) * 100, 100);
+      weightBar.style.width = `${pct}%`;
+      weightBar.style.background = pct > 85 ? '#ff3333' : pct > 60 ? '#ffd700' : '#7cfc00';
+    }
+
+    const staminaBar = this.hudOverlayEl.querySelector('#hud-stamina-bar') as HTMLDivElement;
+    if (staminaBar) {
+      const pct = Math.min(this.stamina, 100);
+      staminaBar.style.width = `${pct}%`;
+      staminaBar.style.background = this.energyDrinkBuffTimer > 0 
+        ? '#00ccff' 
+        : this.shawarmaBuffTimer > 0 
+        ? '#ff9900' 
+        : this.isExhausted 
+        ? '#ff3333' 
+        : '#ffd700';
+    }
+
+    const playersEl = this.hudOverlayEl.querySelector('#hud-players');
+    if (playersEl) playersEl.textContent = `${this.remotePlayers.size + 1}`;
+  }
+
+  private updateInventoryUI(): void {
+    if (!this.inventoryEl) return;
+
+    const grid = this.inventoryEl.querySelector('#inventory-grid');
+    if (!grid) return;
+
+    grid.innerHTML = '';
+
+    for (let i = 0; i < INVENTORY_SLOTS; i++) {
+      const item = this.localInventory[i];
+      const slot = document.createElement('div');
+      
+      slot.style.width = '70px';
+      slot.style.height = '70px';
+      slot.style.background = 'rgba(50,50,50,0.5)';
+      slot.style.border = '2px solid #555';
+      slot.style.borderRadius = '6px';
+      slot.style.display = 'flex';
+      slot.style.alignItems = 'center';
+      slot.style.justifyContent = 'center';
+      slot.style.position = 'relative';
+      slot.style.cursor = item ? 'pointer' : 'default';
+      slot.style.transition = 'border-color 0.15s, background 0.15s';
+
+      if (item) {
+        slot.style.border = '2px solid #7cfc00';
+        slot.style.background = 'rgba(124,252,0,0.1)';
+
+        const def = BOTTLE_TYPES[item];
+        const webpPath = `/assets/props/flat/bottles/${item}.webp`;
+
+        slot.innerHTML = `
+          <img src="${webpPath}" style="max-width:48px; max-height:48px; object-fit:contain;" />
+          <div style="position:absolute; right:4px; bottom:2px; font-size:10px; color:#fff; background:#000000aa; padding:1px 3px; border-radius:2px;">
+            ${def.weight}кг
+          </div>
+        `;
+
+        slot.addEventListener('click', () => {
+          if (this.nearKioskId) {
+            this.sendGameMessage({ type: 'sell-slot', slotIndex: i });
+          } else {
+            this.showFloatingText('Используй автомат, чтобы сдать!', this.player.x, this.player.y - 30, '#ff9900');
+          }
+        });
+      } else {
+        slot.innerHTML = `<span style="font-size:9px; color:#444;">${i+1}</span>`;
+      }
+
+      grid.appendChild(slot);
+    }
+
+    const maxLimit = this.backpackTier === 1 ? 8.0 : this.backpackTier === 2 ? 15.0 : 30.0;
+    const weightStatus = this.inventoryEl.querySelector('#inv-weight-status');
+    if (weightStatus) {
+      weightStatus.textContent = `Вес: ${this.currentWeight.toFixed(1)} / ${maxLimit} кг`;
+    }
+  }
+
+  private destroyHTMLOverlays(): void {
+    this.removeHTMLHUD();
+    this.removeHTMLInventory();
+    this.removeKioskUI();
+    this.removeFoodCartUI();
+
+    const pulseStyle = document.getElementById('hud-pulse-style');
+    if (pulseStyle) pulseStyle.remove();
+  }
+
+  private removeHTMLHUD(): void {
+    const existing = document.getElementById('game-hud-overlay');
+    if (existing) existing.remove();
+    this.hudOverlayEl = undefined;
+  }
+
+  private removeHTMLInventory(): void {
+    const existing = document.getElementById('game-inventory-panel');
+    if (existing) existing.remove();
+    this.inventoryEl = undefined;
+  }
+
+  private removeKioskUI(): void {
+    const existing = document.getElementById('game-kiosk-panel');
+    if (existing) existing.remove();
+  }
+
+  private isPeerSnapshot(v: unknown): v is PeerSnapshot {
+    if (!v || typeof v !== 'object') return false;
+    const p = v as Partial<PeerSnapshot>;
+    return typeof p.id === 'string' && typeof p.x === 'number' && typeof p.y === 'number';
+  }
+
+  private showFloatingText(text: string, x: number, y: number, color = '#7cfc00'): void {
+    const ftext = this.add.text(x, y, text, {
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      color,
+      backgroundColor: '#000000dd',
+      padding: { x: 6, y: 3 }
+    });
+    ftext.setOrigin(0.5);
+    ftext.setDepth(2000);
+
+    this.tweens.add({
+      targets: ftext,
+      y: y - 50,
+      alpha: 0,
+      duration: 1600,
+      onComplete: () => ftext.destroy()
+    });
+  }
+
+  private ensureRemote(id: string, x: number, y: number): void {
+    let rect = this.remotePlayers.get(id);
+    if (!rect) {
+      rect = this.add.image(x, y, 'player');
+      rect.setScale(0.85);
+      rect.setTint(REMOTE_TINT);
+      rect.setDepth(500);
+      this.remotePlayers.set(id, rect);
+      this.updateHUDUI();
+    }
+    rect.x = x;
+    rect.y = y;
+  }
+
+  private removeRemote(id: string): void {
+    const rect = this.remotePlayers.get(id);
+    if (rect) {
+      rect.destroy();
+      this.remotePlayers.delete(id);
+      this.updateHUDUI();
     }
   }
 
@@ -524,462 +1210,5 @@ export class WorldScene extends Phaser.Scene {
         this.removeRemote(id);
       }
     }
-  }
-
-  // ───── Spawners ─────
-
-  private spawnBottleClient(b: ServerBottle): void {
-    if (this.bottlesMap.has(b.id)) return;
-
-    const def = BOTTLE_TYPES[b.type];
-    if (!def) return;
-
-    const img = this.add.image(b.x, b.y, def.spriteKey);
-    img.setScale(0.85);
-    img.setDepth(100);
-
-    // Парение бутылки
-    this.tweens.add({
-      targets: img,
-      y: b.y - 8,
-      duration: 1200 + Math.random() * 400,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut'
-    });
-
-    this.bottlesMap.set(b.id, img);
-  }
-
-  private removeBottleClient(id: string): void {
-    const img = this.bottlesMap.get(id);
-    if (img) {
-      this.tweens.add({
-        targets: img,
-        scale: 0.1,
-        alpha: 0,
-        angle: 180,
-        duration: 200,
-        onComplete: () => {
-          img.destroy();
-        }
-      });
-      this.bottlesMap.delete(id);
-    }
-  }
-
-  // ───── Floating Text ─────
-
-  private showFloatingText(text: string, x: number, y: number, color = '#7cfc00'): void {
-    const ftext = this.add.text(x, y, text, {
-      fontFamily: 'monospace',
-      fontSize: '13px',
-      color,
-      backgroundColor: '#000000dd',
-      padding: { x: 6, y: 3 }
-    });
-    ftext.setOrigin(0.5);
-    ftext.setDepth(2000);
-
-    this.tweens.add({
-      targets: ftext,
-      y: y - 50,
-      alpha: 0,
-      duration: 1600,
-      onComplete: () => ftext.destroy()
-    });
-  }
-
-  private ensureRemote(id: string, x: number, y: number): void {
-    let rect = this.remotePlayers.get(id);
-    if (!rect) {
-      // Иконка для других игроков тоже КАРТИНКА, но затонированная!
-      rect = this.add.image(x, y, 'player');
-      rect.setScale(0.85);
-      rect.setTint(REMOTE_TINT);
-      rect.setDepth(500);
-      this.remotePlayers.set(id, rect);
-      this.updateHUDUI();
-    }
-    rect.x = x;
-    rect.y = y;
-  }
-
-  private removeRemote(id: string): void {
-    const rect = this.remotePlayers.get(id);
-    if (rect) {
-      rect.destroy();
-      this.remotePlayers.delete(id);
-      this.updateHUDUI();
-    }
-  }
-
-  // ───── Movement & Interaction ─────
-
-  update(_time: number, delta: number): void {
-    const now = performance.now();
-    const dt = Math.min(delta, 100) / 1000;
-
-    let vx = 0;
-    let vy = 0;
-    if (this.cursors.left?.isDown || this.wasd.A?.isDown) vx -= 1;
-    if (this.cursors.right?.isDown || this.wasd.D?.isDown) vx += 1;
-    if (this.cursors.up?.isDown || this.wasd.W?.isDown) vy -= 1;
-    if (this.cursors.down?.isDown || this.wasd.S?.isDown) vy += 1;
-
-    if (vx !== 0 && vy !== 0) {
-      const inv = 1 / Math.hypot(vx, vy);
-      vx *= inv;
-      vy *= inv;
-    }
-
-    this.player.x = Phaser.Math.Clamp(this.player.x + vx * MOVE_SPEED * dt, 18, MAP_PIXEL_W - 18);
-    this.player.y = Phaser.Math.Clamp(this.player.y + vy * MOVE_SPEED * dt, 18, MAP_PIXEL_H - 18);
-
-    if ((vx !== 0 || vy !== 0) && this.netcode) {
-      this.sendMoveThrottled();
-    }
-
-    // Горячие клавиши инвентаря
-    if (Phaser.Input.Keyboard.JustDown(this.keyI) || Phaser.Input.Keyboard.JustDown(this.keyTab)) {
-      this.toggleInventory();
-    }
-
-    // ───── Подбор бутылок при соприкосновении ─────
-    for (const [id, img] of this.bottlesMap.entries()) {
-      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, img.x, img.y);
-      if (dist < 48) {
-        if (img.visible) {
-          // Предсказание на клиенте: скрываем бутылку
-          img.setVisible(false);
-          this.sendGameMessage({ type: 'pickup-bottle', bottleId: id });
-        }
-      }
-    }
-
-    // ───── Взаимодействие с автоматами сдачи ─────
-    let activeKioskId: string | null = null;
-    if (this.mapJson && this.mapJson.entities) {
-      for (const entity of Object.values(this.mapJson.entities)) {
-        if (entity.type === 'kiosk') {
-          const kx = entity.cellX * TILE_SIZE + TILE_SIZE / 2;
-          const ky = entity.cellY * TILE_SIZE + TILE_SIZE / 2;
-          const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, kx, ky);
-          if (dist < 100) {
-            activeKioskId = entity.id;
-            break;
-          }
-        }
-      }
-    }
-
-    this.nearKioskId = activeKioskId;
-
-    const kioskPrompt = document.getElementById('kiosk-prompt-indicator');
-    if (kioskPrompt) {
-      if (this.nearKioskId) {
-        kioskPrompt.style.display = 'block';
-        if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
-          this.openKioskUI();
-        }
-      } else {
-        kioskPrompt.style.display = 'none';
-        this.closeKioskUI();
-      }
-    }
-
-    this.renderRemoteInterpolated(now);
-  }
-
-  private sendMoveThrottled(): void {
-    const now = performance.now();
-    if (now - this.lastSentAt < SEND_INTERVAL_MS) return;
-    this.lastSentAt = now;
-    this.sendGameMessage({ type: 'move', x: this.player.x, y: this.player.y });
-  }
-
-  private sendGameMessage(msg: { type: string; [key: string]: unknown }): void {
-    if (!this.netcode) return;
-    if (this.simulatedLagMs > 0) {
-      setTimeout(() => {
-        this.netcode?.send(msg);
-      }, this.simulatedLagMs);
-    } else {
-      this.netcode.send(msg);
-    }
-  }
-
-  // ───── HTML Overlay Managers ─────
-
-  private createHTMLHUD(): void {
-    this.removeHTMLHUD();
-
-    const hud = document.createElement('div');
-    hud.id = 'game-hud-overlay';
-    hud.style.position = 'fixed';
-    hud.style.left = '16px';
-    hud.style.top = '16px';
-    hud.style.background = 'rgba(10,10,10,0.85)';
-    hud.style.color = '#7cfc00';
-    hud.style.border = '2px solid #7cfc00';
-    hud.style.borderRadius = '6px';
-    hud.style.padding = '12px 16px';
-    hud.style.fontFamily = 'monospace';
-    hud.style.fontSize = '14px';
-    hud.style.zIndex = '9999';
-    hud.style.lineHeight = '1.5';
-    hud.style.boxShadow = '0 2px 10px rgba(0,0,0,0.5)';
-
-    hud.innerHTML = `
-      <div style="font-weight:bold; font-size:16px; margin-bottom:6px; color:#fff; display:flex; align-items:center;">
-        <img src="/assets/chars/player.webp" style="width:24px; height:24px; margin-right:8px;" /> MONEYROLL HUD
-      </div>
-      <div id="hud-money" style="display:flex; align-items:center; margin-bottom:4px;">
-        <img src="/assets/icons/coin.webp" style="width:16px; height:16px; margin-right:6px;" /> Баланс: $5.00
-      </div>
-      <div id="hud-weight">Вес сумки: 0.0 / 8.0 кг</div>
-      <div style="width: 150px; background: #333; height: 6px; border-radius: 3px; margin: 4px 0 8px 0; overflow:hidden;">
-        <div id="hud-weight-bar" style="background:#7cfc00; width:0%; height:100%; transition: width 0.2s;"></div>
-      </div>
-      <div style="font-size:12px; color:#aaa;">Игроков рядом: <span id="hud-players">1</span></div>
-      <div style="font-size:11px; color:#ff9900; margin-top:2px;">Клавиша L: лаг-симулятор (${this.simulatedLagMs}мс)</div>
-      <button id="btn-toggle-inv" style="margin-top:10px; width:100%; padding:6px; background:#7cfc00; color:#050505; border:none; border-radius:3px; font-weight:bold; cursor:pointer;">ИНВЕНТАРЬ (I)</button>
-      
-      <!-- Индикатор автомата сдачи -->
-      <div id="kiosk-prompt-indicator" style="display:none; margin-top:10px; background:rgba(255,215,0,0.2); color:#ffd700; border:1px solid #ffd700; padding:6px; border-radius:3px; text-align:center; font-weight:bold; animation: pulse 1s infinite alternate;">
-        [E] ОТКРЫТЬ АВТОМАТ СДАЧИ
-      </div>
-    `;
-
-    document.body.appendChild(hud);
-    this.hudOverlayEl = hud;
-
-    hud.querySelector('#btn-toggle-inv')?.addEventListener('click', () => {
-      this.toggleInventory();
-    });
-
-    // Добавляем стиль для анимации индикатора
-    const style = document.createElement('style');
-    style.id = 'hud-pulse-style';
-    style.innerHTML = `
-      @keyframes pulse {
-        from { opacity: 0.7; }
-        to { opacity: 1; transform: scale(1.02); }
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  private createHTMLInventory(): void {
-    this.removeHTMLInventory();
-
-    const inv = document.createElement('div');
-    inv.id = 'game-inventory-panel';
-    inv.style.position = 'fixed';
-    inv.style.left = '50%';
-    inv.style.top = '50%';
-    inv.style.transform = 'translate(-50%, -50%)';
-    inv.style.background = 'rgba(20,20,20,0.98)';
-    inv.style.border = '3px solid #7cfc00';
-    inv.style.borderRadius = '8px';
-    inv.style.padding = '18px';
-    inv.style.fontFamily = 'monospace';
-    inv.style.zIndex = '99999';
-    inv.style.boxShadow = '0 5px 25px rgba(0,0,0,0.8)';
-    inv.style.display = 'none'; // По умолчанию закрыт
-    inv.style.pointerEvents = 'auto';
-
-    inv.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid #333; padding-bottom:6px;">
-        <span style="font-weight:bold; font-size:15px; color:#7cfc00; letter-spacing:1px; display:flex; align-items:center;">
-          🎒 МОЙ РЮКЗАК (3х4 слота)
-        </span>
-        <button id="btn-close-inv" style="background:none; border:none; color:#ff4444; font-weight:bold; cursor:pointer; font-size:16px;">[X]</button>
-      </div>
-      
-      <div id="inventory-grid" style="display:grid; grid-template-columns: repeat(4, 72px); grid-template-rows: repeat(3, 72px); gap: 10px; margin-bottom:12px;">
-        <!-- Сюда вставляются слоты динамически -->
-      </div>
-      
-      <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#888;">
-        <span>Клик по предмету — сдать (у автомата)</span>
-        <span id="inv-weight-status">Вес: 0.0 / 8.0 кг</span>
-      </div>
-    `;
-
-    document.body.appendChild(inv);
-    this.inventoryEl = inv;
-
-    inv.querySelector('#btn-close-inv')?.addEventListener('click', () => {
-      this.toggleInventory(false);
-    });
-
-    this.updateInventoryUI();
-  }
-
-  private toggleInventory(force?: boolean): void {
-    this.isInventoryOpen = force !== undefined ? force : !this.isInventoryOpen;
-    if (this.inventoryEl) {
-      this.inventoryEl.style.display = this.isInventoryOpen ? 'block' : 'none';
-    }
-  }
-
-  private openKioskUI(): void {
-    if (!this.nearKioskId) return;
-    this.toggleInventory(true); // Всегда открываем инвентарь при открытии киоска
-
-    this.removeKioskUI();
-
-    const kiosk = document.createElement('div');
-    kiosk.id = 'game-kiosk-panel';
-    kiosk.style.position = 'fixed';
-    kiosk.style.left = '50%';
-    kiosk.style.top = '10%';
-    kiosk.style.transform = 'translateX(-50%)';
-    kiosk.style.background = 'rgba(15,15,15,0.98)';
-    kiosk.style.border = '3px solid #ffd700';
-    kiosk.style.borderRadius = '8px';
-    kiosk.style.padding = '15px';
-    kiosk.style.width = '310px';
-    kiosk.style.fontFamily = 'monospace';
-    kiosk.style.zIndex = '99999';
-    kiosk.style.boxShadow = '0 5px 25px rgba(0,0,0,0.8)';
-    kiosk.style.pointerEvents = 'auto';
-
-    kiosk.innerHTML = `
-      <h3 style="margin-top:0; border-bottom:2px solid #ffd700; padding-bottom:6px; color:#ffd700; text-align:center;">🏪 АВТОМАТ СДАЧИ БУТЫЛОК</h3>
-      <p style="font-size:12px; color:#ccc; line-height:1.4; margin-bottom:12px; text-align:center;">
-        Сдавай стеклотару в автомат! Кликни по бутылке в инвентаре, чтобы сдать её поштучно, либо нажми кнопку ниже.
-      </p>
-      
-      <button id="btn-recycle-all" style="width:100%; padding:10px; background:#ffd700; color:#111; border:none; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px; letter-spacing:1px; margin-bottom:8px;">♻️ СДАТЬ ВСЕ БУТЫЛКИ</button>
-      <button id="btn-close-kiosk" style="width:100%; padding:6px; background:#444; color:#fff; border:none; border-radius:4px; cursor:pointer;">Закрыть</button>
-    `;
-
-    document.body.appendChild(kiosk);
-
-    kiosk.querySelector('#btn-recycle-all')?.addEventListener('click', () => {
-      this.sendGameMessage({ type: 'sell-all-bottles' });
-    });
-
-    kiosk.querySelector('#btn-close-kiosk')?.addEventListener('click', () => {
-      this.closeKioskUI();
-    });
-  }
-
-  private closeKioskUI(): void {
-    this.removeKioskUI();
-  }
-
-  private updateHUDUI(): void {
-    if (!this.hudOverlayEl) return;
-
-    const moneyEl = this.hudOverlayEl.querySelector('#hud-money');
-    if (moneyEl) moneyEl.innerHTML = `<img src="/assets/icons/coin.webp" style="width:18px; height:18px; margin-right:6px;" /> Баланс: <strong style="color:#fff;">$${this.localMoney.toFixed(2)}</strong>`;
-
-    const weightEl = this.hudOverlayEl.querySelector('#hud-weight');
-    if (weightEl) weightEl.innerHTML = `Вес сумки: <strong style="color:#fff;">${this.currentWeight.toFixed(1)}</strong> / ${MAX_INVENTORY_WEIGHT} кг`;
-
-    const weightBar = this.hudOverlayEl.querySelector('#hud-weight-bar') as HTMLDivElement;
-    if (weightBar) {
-      const pct = Math.min((this.currentWeight / MAX_INVENTORY_WEIGHT) * 100, 100);
-      weightBar.style.width = `${pct}%`;
-      weightBar.style.background = pct > 85 ? '#ff3333' : pct > 60 ? '#ffd700' : '#7cfc00';
-    }
-
-    const playersEl = this.hudOverlayEl.querySelector('#hud-players');
-    if (playersEl) playersEl.textContent = `${this.remotePlayers.size + 1}`;
-  }
-
-  private updateInventoryUI(): void {
-    if (!this.inventoryEl) return;
-
-    const grid = this.inventoryEl.querySelector('#inventory-grid');
-    if (!grid) return;
-
-    grid.innerHTML = '';
-
-    for (let i = 0; i < INVENTORY_SLOTS; i++) {
-      const item = this.localInventory[i];
-      const slot = document.createElement('div');
-      
-      slot.style.width = '70px';
-      slot.style.height = '70px';
-      slot.style.background = 'rgba(50,50,50,0.5)';
-      slot.style.border = '2px solid #555';
-      slot.style.borderRadius = '6px';
-      slot.style.display = 'flex';
-      slot.style.alignItems = 'center';
-      slot.style.justifyContent = 'center';
-      slot.style.position = 'relative';
-      slot.style.cursor = item ? 'pointer' : 'default';
-      slot.style.transition = 'border-color 0.15s, background 0.15s';
-
-      if (item) {
-        slot.style.border = '2px solid #7cfc00';
-        slot.style.background = 'rgba(124,252,0,0.1)';
-
-        const def = BOTTLE_TYPES[item];
-        const webpPath = `/assets/props/flat/bottles/${item}.webp`;
-
-        // Картинка бутылки
-        slot.innerHTML = `
-          <img src="${webpPath}" style="max-width:48px; max-height:48px; object-fit:contain;" />
-          <div style="position:absolute; right:4px; bottom:2px; font-size:10px; color:#fff; background:#000000aa; padding:1px 3px; border-radius:2px;">
-            ${def.weight}кг
-          </div>
-        `;
-
-        // Клик по слоту сдаёт бутылку (если открыт киоск)
-        slot.addEventListener('click', () => {
-          if (this.nearKioskId) {
-            this.sendGameMessage({ type: 'sell-slot', slotIndex: i });
-          } else {
-            this.showFloatingText('Используй автомат, чтобы сдать!', this.player.x, this.player.y - 30, '#ff9900');
-          }
-        });
-      } else {
-        slot.innerHTML = `<span style="font-size:9px; color:#444;">${i+1}</span>`;
-      }
-
-      grid.appendChild(slot);
-    }
-
-    const weightStatus = this.inventoryEl.querySelector('#inv-weight-status');
-    if (weightStatus) {
-      weightStatus.textContent = `Вес: ${this.currentWeight.toFixed(1)} / ${MAX_INVENTORY_WEIGHT} кг`;
-    }
-  }
-
-  private destroyHTMLOverlays(): void {
-    this.removeHTMLHUD();
-    this.removeHTMLInventory();
-    this.removeKioskUI();
-
-    const pulseStyle = document.getElementById('hud-pulse-style');
-    if (pulseStyle) pulseStyle.remove();
-  }
-
-  private removeHTMLHUD(): void {
-    const existing = document.getElementById('game-hud-overlay');
-    if (existing) existing.remove();
-    this.hudOverlayEl = undefined;
-  }
-
-  private removeHTMLInventory(): void {
-    const existing = document.getElementById('game-inventory-panel');
-    if (existing) existing.remove();
-    this.inventoryEl = undefined;
-  }
-
-  private removeKioskUI(): void {
-    const existing = document.getElementById('game-kiosk-panel');
-    if (existing) existing.remove();
-  }
-
-  private isPeerSnapshot(v: unknown): v is PeerSnapshot {
-    if (!v || typeof v !== 'object') return false;
-    const p = v as Partial<PeerSnapshot>;
-    return typeof p.id === 'string' && typeof p.x === 'number' && typeof p.y === 'number';
   }
 }

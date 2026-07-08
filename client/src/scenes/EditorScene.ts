@@ -24,7 +24,7 @@ export class EditorScene extends Phaser.Scene {
   // Выбранные инструменты
   private currentTool: 'tile' | 'entity' | 'eraser' = 'tile';
   private selectedTileType: TileType = 'ground-grass';
-  private selectedEntityType: 'kiosk' | 'spawner' | 'npc' | 'building' = 'kiosk';
+  private selectedEntityType: 'kiosk' | 'spawner' | 'npc' | 'building' | 'apartment-1' | 'apartment-2' | 'wall' | 'food-cart' = 'kiosk';
   private currentRotation = 0; // 0, 90, 180, 270
 
   // Спрайты
@@ -222,6 +222,30 @@ export class EditorScene extends Phaser.Scene {
     if (entity.type === 'kiosk') {
       const img = this.add.image(px, py, 'recycle-machine');
       img.setScale(1.1);
+      img.setAngle(entity.rotation);
+      img.setDepth(100);
+      this.entitySpritesMap.set(key, img);
+    } else if (entity.type === 'food-cart') {
+      const img = this.add.image(px, py, 'food-cart');
+      img.setScale(1.0);
+      img.setAngle(entity.rotation);
+      img.setDepth(100);
+      this.entitySpritesMap.set(key, img);
+    } else if (entity.type === 'apartment-1') {
+      const img = this.add.image(px, py, 'apartment-1');
+      img.setScale(1.0);
+      img.setAngle(entity.rotation);
+      img.setDepth(100);
+      this.entitySpritesMap.set(key, img);
+    } else if (entity.type === 'apartment-2') {
+      const img = this.add.image(px, py, 'apartment-2');
+      img.setScale(1.0);
+      img.setAngle(entity.rotation);
+      img.setDepth(100);
+      this.entitySpritesMap.set(key, img);
+    } else if (entity.type === 'wall') {
+      const img = this.add.image(px, py, 'wall');
+      img.setScale(1.0);
       img.setAngle(entity.rotation);
       img.setDepth(100);
       this.entitySpritesMap.set(key, img);
@@ -452,8 +476,18 @@ export class EditorScene extends Phaser.Scene {
     } else if (this.currentTool === 'entity') {
       if (this.selectedEntityType === 'kiosk') {
         spriteKey = 'recycle-machine';
+      } else if (this.selectedEntityType === 'food-cart') {
+        spriteKey = 'food-cart';
+      } else if (this.selectedEntityType === 'apartment-1') {
+        spriteKey = 'apartment-1';
+      } else if (this.selectedEntityType === 'apartment-2') {
+        spriteKey = 'apartment-2';
+      } else if (this.selectedEntityType === 'wall') {
+        spriteKey = 'wall';
+      } else if (this.selectedEntityType === 'npc') {
+        spriteKey = 'player';
       } else {
-        spriteKey = 'bottle-water'; // иконка спавнера в ghost
+        spriteKey = 'bottle-water';
       }
     } else {
       spriteKey = 'tile-ground-grass'; // ластик
@@ -559,6 +593,10 @@ export class EditorScene extends Phaser.Scene {
         <select id="editor-entity-select" style="width:100%; background:#222; color:#fff; border:1px solid #ff6b6b; padding:5px; border-radius:4px; cursor:pointer; margin-bottom:10px;">
           <option value="kiosk">Recycle Kiosk (Автомат)</option>
           <option value="spawner">Bottle Spawner (Спавнер)</option>
+          <option value="food-cart">Ларёк с Шаурмой (Магазин)</option>
+          <option value="apartment-1">Кирпичный дом (Квартира 1)</option>
+          <option value="apartment-2">Панельный дом (Квартира 2)</option>
+          <option value="wall">Забор/Стена (Препятствие)</option>
           <option value="building">Здание (Декор)</option>
           <option value="npc">NPC-Житель</option>
         </select>

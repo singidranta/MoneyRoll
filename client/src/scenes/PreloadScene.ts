@@ -36,6 +36,12 @@ export class PreloadScene extends Phaser.Scene {
     // Спрайт игрока и UI иконки
     this.load.image('player', '/assets/chars/player.webp');
     this.load.image('icon-coin', '/assets/icons/coin.webp');
+
+    // Квартиры, стены и ларёк с шаурмой
+    this.load.image('apartment-1', '/assets/props/flat/buildings/apartment-1.webp');
+    this.load.image('apartment-2', '/assets/props/flat/buildings/apartment-2.webp');
+    this.load.image('wall', '/assets/props/flat/walls/wall.webp');
+    this.load.image('food-cart', '/assets/props/flat/kiosk/food-cart.webp');
   }
 
   create(): void {

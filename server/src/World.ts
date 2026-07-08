@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws';
-import { BOTTLE_TYPES, MAX_INVENTORY_WEIGHT, INVENTORY_SLOTS, type BottleType, type ServerBottle } from '../../shared/economy.js';
+import { BOTTLE_TYPES, INVENTORY_SLOTS, type BottleType, type ServerBottle } from '../../shared/economy.js';
 import { cellKey, type MapDocument, type MapEntity } from '../../shared/map.js';
 
 export type WireMessage = {
@@ -14,6 +14,7 @@ type Client = {
   y: number;
   money: number;
   inventory: (BottleType | null)[]; // 12 слотов инвентаря
+  backpackTier: number; // 1 = Пакет (8кг), 2 = Сумка (15кг), 3 = Рюкзак (30кг)
 };
 
 export type PeerSnapshot = {
@@ -32,29 +33,22 @@ export class World {
   private spawnerIntervals: NodeJS.Timeout[] = [];
 
   constructor() {
-    // Вся инициализация спавнов и объектов теперь происходит динамически через setMap()!
+    // Вся инициализация спавнов происходит через setMap()!
   }
 
   get size(): number {
     return this.clients.size;
   }
 
-  /**
-   * Устанавливает текущую карту и запускает спавн бутылок из её объектов-спавнеров.
-   * Вызывается на старте сервера и каждый раз, когда карта сохраняется в редакторе (Hot-Reload!).
-   */
   setMap(map: MapDocument): void {
     this.map = map;
     
-    // Очищаем старые таймеры спавнеров
     for (const timer of this.spawnerIntervals) {
       clearInterval(timer);
     }
     this.spawnerIntervals = [];
 
-    // Очищаем старые динамические бутылки, чтобы начать с чистого листа при обновлении карты
     this.bottles.clear();
-
     this.spawners = [];
     this.kiosks = [];
 
@@ -62,7 +56,6 @@ export class World {
       map.entities = {};
     }
 
-    // Собираем спавнеры и киоски с карты
     for (const entity of Object.values(map.entities)) {
       if (entity.type === 'spawner') {
         this.spawners.push(entity);
@@ -75,15 +68,12 @@ export class World {
       `[MoneyRoll][World] Карта загружена: объектов-спавнеров: ${this.spawners.length}, киосков: ${this.kiosks.length}`
     );
 
-    // Запускаем периодический спавн для каждого спавнера
     for (const spawner of this.spawners) {
-      const intervalMs = (spawner.properties.spawnInterval ?? 15) * 1000; // По умолчанию каждые 15 сек
+      const intervalMs = (spawner.properties.spawnInterval ?? 15) * 1000;
       const maxCount = spawner.properties.maxBottles ?? 3;
 
-      // Делаем первичный спавн при старте
       this.tickSpawner(spawner, maxCount);
 
-      // Запускаем интервал
       const timer = setInterval(() => {
         this.tickSpawner(spawner, maxCount);
       }, intervalMs);
@@ -91,7 +81,6 @@ export class World {
       this.spawnerIntervals.push(timer);
     }
 
-    // Сообщаем всем подключенным игрокам о новой карте
     this.broadcastAll({
       type: 'map-reload',
       bottles: this.getBottles(),
@@ -120,17 +109,14 @@ export class World {
     const targetX = spawner.cellX + dx;
     const targetY = spawner.cellY + dy;
 
-    // Проверяем границы карты
     if (targetX < 0 || targetX >= 30 || targetY < 0 || targetY >= 30) return;
 
-    // Проверяем, свободна ли клетка от других объектов
     const targetKey = cellKey(targetX, targetY);
     if (this.map?.entities?.[targetKey]) return; // уже занята другим объектом
 
     const id = `bottle_${Math.random().toString(36).slice(2, 10)}`;
     const type = this.selectRandomBottleType();
 
-    // Снапим координаты строго по центру клетки 128x128
     const pixelX = targetX * 128 + 64;
     const pixelY = targetY * 128 + 64;
 
@@ -152,7 +138,6 @@ export class World {
   }
 
   add(id: string, ws: WebSocket): void {
-    // Пустой Minecraft-style инвентарь из 12 слотов
     const emptyInventory = Array(INVENTORY_SLOTS).fill(null);
 
     this.clients.set(id, {
@@ -161,7 +146,8 @@ export class World {
       x: 400,
       y: 300,
       money: 5.0, // Стартуем бомжом с $5
-      inventory: emptyInventory
+      inventory: emptyInventory,
+      backpackTier: 1 // По умолчанию пакет
     });
   }
 
@@ -169,7 +155,6 @@ export class World {
     this.clients.delete(id);
   }
 
-  /** Снимок всех позиций — используется в welcome при коннекте нового клиента. */
   snapshot(includeId?: string): PeerSnapshot[] {
     return Array.from(this.clients.values())
       .filter((c) => (includeId ? c.id !== includeId : true))
@@ -196,6 +181,10 @@ export class World {
       }
     }
     return parseFloat(total.toFixed(2));
+  }
+
+  private getMaxWeightLimit(tier: number): number {
+    return tier === 1 ? 8.0 : tier === 2 ? 15.0 : 30.0;
   }
 
   handle(fromId: string, msg: WireMessage): void {
@@ -225,7 +214,6 @@ export class World {
           return;
         }
 
-        // Проверяем расстояние (допустим, лимит 150 пикселей под новую сетку 128)
         const dist = Math.hypot(c.x - bottle.x, c.y - bottle.y);
         if (dist > 180) {
           c.ws.send(JSON.stringify({
@@ -237,32 +225,31 @@ export class World {
           return;
         }
 
-        // Расчёт веса
         const itemDef = BOTTLE_TYPES[bottle.type];
         const currentWeight = this.calculateWeight(c.inventory);
-        if (currentWeight + itemDef.weight > MAX_INVENTORY_WEIGHT) {
+        const maxLimit = this.getMaxWeightLimit(c.backpackTier);
+
+        if (currentWeight + itemDef.weight > maxLimit) {
           c.ws.send(JSON.stringify({
             type: 'pickup-failed',
             bottleId,
             reason: 'too-heavy',
-            message: `Превышен вес! Максимум: ${MAX_INVENTORY_WEIGHT}кг`
+            message: `Превышен вес! Максимум: ${maxLimit}кг`
           }));
           return;
         }
 
-        // Поиск пустого слота
         const emptySlotIdx = c.inventory.indexOf(null);
         if (emptySlotIdx === -1) {
           c.ws.send(JSON.stringify({
             type: 'pickup-failed',
             bottleId,
             reason: 'inventory-full',
-            message: 'Все 12 слотов инвентаря забиты!'
+            message: 'Инвентарь полон!'
           }));
           return;
         }
 
-        // Успешный подбор!
         this.bottles.delete(bottleId);
         c.inventory[emptySlotIdx] = bottle.type;
 
@@ -273,7 +260,7 @@ export class World {
           bottleId,
           inventory: c.inventory,
           weight: newWeight,
-          message: `Подобрано в слот ${emptySlotIdx + 1}: ${itemDef.name}`
+          message: `Подобрано: ${itemDef.name}`
         }));
 
         this.broadcastAll({
@@ -291,7 +278,6 @@ export class World {
         const bottleType = c.inventory[slotIdx];
         if (!bottleType) return;
 
-        // Проверяем расстояние до ближайшего автомата
         let nearKiosk = false;
         for (const kiosk of this.kiosks) {
           const kx = kiosk.cellX * 128 + 64;
@@ -305,7 +291,7 @@ export class World {
         if (!nearKiosk) {
           c.ws.send(JSON.stringify({
             type: 'sell-failed',
-            message: 'Ты должен стоять рядом с автоматом сдачи!'
+            message: 'Ты должен стоять рядом с автоматом!'
           }));
           return;
         }
@@ -327,7 +313,6 @@ export class World {
       }
 
       case 'sell-all-bottles': {
-        // Проверяем расстояние до ближайшего автомата
         let nearKiosk = false;
         for (const kiosk of this.kiosks) {
           const kx = kiosk.cellX * 128 + 64;
@@ -341,7 +326,7 @@ export class World {
         if (!nearKiosk) {
           c.ws.send(JSON.stringify({
             type: 'sell-failed',
-            message: 'Ты должен стоять рядом с автоматом сдачи!'
+            message: 'Ты должен стоять рядом с автоматом!'
           }));
           return;
         }
@@ -374,7 +359,68 @@ export class World {
           money: c.money,
           inventory: c.inventory,
           weight: newWeight,
-          message: `Успешно сдано бутылок: ${soldCount} шт. Получено: $${totalGain.toFixed(2)}!`
+          message: `Сдано бутылок: ${soldCount} шт. Получено: $${totalGain.toFixed(2)}!`
+        }));
+        break;
+      }
+
+      case 'upgrade-backpack': {
+        const tier = msg.tier;
+        if (typeof tier !== 'number' || tier < 1 || tier > 3) return;
+
+        const cost = tier === 2 ? 15.0 : tier === 3 ? 45.0 : 0;
+        if (c.money < cost) {
+          c.ws.send(JSON.stringify({
+            type: 'upgrade-failed',
+            message: `Недостаточно денег! Нужно $${cost.toFixed(2)}`
+          }));
+          return;
+        }
+
+        if (c.backpackTier >= tier) {
+          c.ws.send(JSON.stringify({
+            type: 'upgrade-failed',
+            message: `У тебя уже есть рюкзак лучше!`
+          }));
+          return;
+        }
+
+        c.money -= cost;
+        c.backpackTier = tier;
+
+        const weight = this.calculateWeight(c.inventory);
+
+        c.ws.send(JSON.stringify({
+          type: 'upgrade-success',
+          backpackTier: c.backpackTier,
+          money: c.money,
+          weight: weight,
+          message: `Куплено улучшение: ${tier === 2 ? 'Спортивная сумка (15кг)' : 'Рюкзак туриста (30кг)'}!`
+        }));
+        break;
+      }
+
+      case 'buy-food': {
+        const item = msg.itemType;
+        const cost = item === 'shawarma' ? 1.50 : item === 'energy' ? 3.00 : 0.0;
+
+        if (c.money < cost) {
+          c.ws.send(JSON.stringify({
+            type: 'buy-food-failed',
+            message: 'Недостаточно денег!'
+          }));
+          return;
+        }
+
+        c.money -= cost;
+
+        c.ws.send(JSON.stringify({
+          type: 'buy-food-success',
+          itemType: item,
+          money: c.money,
+          message: item === 'shawarma' 
+            ? 'Сытная Шаурма! Восстановлено 100% энергии + бафф бега!' 
+            : 'Энергетик Ягуар! Даёт бешеную суперскорость!'
         }));
         break;
       }
@@ -384,7 +430,6 @@ export class World {
     }
   }
 
-  /** Broadcast всем клиентам, КРОМЕ excludeId */
   broadcastExcept(excludeId: string, payload: object): void {
     const json = JSON.stringify(payload);
     for (const [id, c] of this.clients) {
@@ -393,13 +438,11 @@ export class World {
     }
   }
 
-  /** Broadcast ВСЕМ клиентам */
   broadcastAll(payload: object): void {
     const json = JSON.stringify(payload);
     this.broadcastAllRaw(json);
   }
 
-  /** Прямая отправка уже сериализованного JSON всем клиентам */
   broadcastAllRaw(jsonString: string): void {
     for (const c of this.clients.values()) {
       if (c.ws.readyState === c.ws.OPEN) c.ws.send(jsonString);
