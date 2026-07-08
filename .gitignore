@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.DS_Store
+.vscode/
+.idea/
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
+# Vite build output
+client/dist/
+client/.vite/
+
+# Generated assets (later, when AI pipe is in place)
+client/public/assets/generated/
+
+# Cache
+.cache/
+.turbo/

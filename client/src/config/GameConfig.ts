@@ -1,0 +1,27 @@
+import Phaser from 'phaser';
+import { BootScene } from '../scenes/BootScene';
+import { PreloadScene } from '../scenes/PreloadScene';
+import { WorldScene } from '../scenes/WorldScene';
+
+export const GameConfig: Phaser.Types.Core.GameConfig = {
+  type: Phaser.AUTO,
+  backgroundColor: '#0a0a0a',
+  scale: {
+    mode: Phaser.Scale.RESIZE,
+    width: window.innerWidth,
+    height: window.innerHeight,
+  },
+  pixelArt: false,
+  fps: {
+    target: 60,
+    forceSetTimeOut: false,
+  },
+  physics: {
+    default: 'arcade',
+    arcade: {
+      gravity: { x: 0, y: 0 },
+      debug: false,
+    },
+  },
+  scene: [BootScene, PreloadScene, WorldScene],
+};

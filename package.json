@@ -1,0 +1,21 @@
+{
+  "name": "moneyroll",
+  "version": "0.1.0",
+  "private": true,
+  "description": "2D онлайн-RPG про то, как стать богатым.",
+  "scripts": {
+    "dev": "concurrently -n SERVER,CLIENT -c blue,green \"pnpm --filter @moneyroll/server dev\" \"pnpm --filter @moneyroll/client dev\"",
+    "dev:server": "pnpm --filter @moneyroll/server dev",
+    "dev:client": "pnpm --filter @moneyroll/client dev",
+    "build": "pnpm -r run build",
+    "typecheck": "pnpm -r run typecheck",
+    "clean": "pnpm -r exec rm -rf dist node_modules"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
