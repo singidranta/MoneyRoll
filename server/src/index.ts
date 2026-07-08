@@ -151,8 +151,14 @@ wss.on('connection', (ws, req) => {
 
   world.add(id, ws);
 
-  // Привет + стартовый список игроков.
-  ws.send(JSON.stringify({ type: 'welcome', id, players: world.snapshot(id) }));
+  // Привет + стартовый список игроков, бутылок и киосков.
+  ws.send(JSON.stringify({
+    type: 'welcome',
+    id,
+    players: world.snapshot(id),
+    bottles: world.getBottles(),
+    kiosks: world.getKiosks()
+  }));
 
   // Сообщаем остальным, что новый игрок появился.
   world.broadcastExcept(id, { type: 'peer-join', id });

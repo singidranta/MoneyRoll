@@ -6,9 +6,15 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // В Этапе 0 нет ассетов. В Этапе 5 (AI-пайплайн) сюда добавятся
-    // this.load.image('player-head', '/assets/chars/flat/head/base.png') и т.д.
-    console.log('[MoneyRoll] Preload OK (no assets yet)');
+    console.log('[MoneyRoll] Preloading webp assets...');
+    this.load.image('tile-ground', '/assets/tiles/flat/ground.webp');
+    this.load.image('tile-road', '/assets/tiles/flat/road.webp');
+    this.load.image('bottle-water', '/assets/props/flat/bottles/water.webp');
+    this.load.image('bottle-beer-glass', '/assets/props/flat/bottles/beer-glass.webp');
+    this.load.image('bottle-wine', '/assets/props/flat/bottles/wine.webp');
+    this.load.image('bottle-champagne', '/assets/props/flat/bottles/champagne.webp');
+    this.load.image('bottle-bordeaux-1982', '/assets/props/flat/bottles/bordeaux-1982.webp');
+    this.load.image('recycle-machine', '/assets/props/flat/kiosk/recycle-machine.webp');
   }
 
   create(): void {
