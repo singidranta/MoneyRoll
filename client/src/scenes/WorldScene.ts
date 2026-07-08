@@ -728,6 +728,16 @@ export class WorldScene extends Phaser.Scene {
     this.nearKioskId = activeKioskId;
     this.nearFoodCartEntity = activeFoodCartEntity;
 
+    // ───── Авто-закрытие меню при отдалении ─────
+    if (!this.nearKioskId && document.getElementById('game-kiosk-panel')) {
+      this.closeKioskUI();
+      this.toggleInventory(false);
+    }
+    if (!this.nearFoodCartEntity && document.getElementById('game-food-cart-panel')) {
+      this.closeFoodCartUI();
+      this.toggleInventory(false);
+    }
+
     // Всплывающие плашки на экране
     const kioskPrompt = document.getElementById('kiosk-prompt-indicator');
     if (kioskPrompt) {
@@ -743,9 +753,6 @@ export class WorldScene extends Phaser.Scene {
       if (this.nearFoodCartEntity && Phaser.Input.Keyboard.JustDown(this.keyE)) {
         this.openFoodCartUI();
       }
-    } else if (this.nearFoodCartEntity) {
-      // Если плашки нет, закрываем меню при отдалении
-      this.closeFoodCartUI();
     }
 
     this.renderRemoteInterpolated(now);
@@ -779,29 +786,30 @@ export class WorldScene extends Phaser.Scene {
     hud.style.position = 'fixed';
     hud.style.left = '16px';
     hud.style.top = '16px';
-    hud.style.background = 'rgba(10,10,10,0.85)';
-    hud.style.color = '#7cfc00';
-    hud.style.border = '2px solid #7cfc00';
-    hud.style.borderRadius = '6px';
-    hud.style.padding = '12px 16px';
+    hud.style.background = "url('/assets/ui/panel-bg.webp') repeat";
+    hud.style.color = '#ffffff';
+    hud.style.border = '4px solid #7cfc00';
+    hud.style.borderRadius = '8px';
+    hud.style.padding = '14px 18px';
     hud.style.fontFamily = 'monospace';
     hud.style.fontSize = '14px';
     hud.style.zIndex = '9999';
     hud.style.lineHeight = '1.5';
-    hud.style.boxShadow = '0 2px 10px rgba(0,0,0,0.5)';
+    hud.style.boxShadow = '0 4px 15px rgba(0,0,0,0.6)';
+    hud.style.imageRendering = 'pixelated';
 
     hud.innerHTML = `
       <div style="font-weight:bold; font-size:16px; margin-bottom:6px; color:#fff; display:flex; align-items:center;">
         <img src="/assets/chars/player.webp" style="width:24px; height:24px; margin-right:8px; border-radius:50%;" /> MONEYROLL HUD
       </div>
-      <div id="hud-money" style="display:flex; align-items:center; margin-bottom:4px; font-weight:bold;">
+      <div id="hud-money" style="display:flex; align-items:center; margin-bottom:4px; font-weight:bold; color:#7cfc00;">
         <img src="/assets/icons/coin.webp" style="width:16px; height:16px; margin-right:6px;" /> Баланс: $5.00
       </div>
       <div id="hud-weight">Сумка: Пакет (0.0 / 8.0 кг)</div>
       
       <!-- Полоска выносливости (Stamina) -->
       <div style="margin-top:6px;">
-        <span style="font-size:11px; color:#aaa; display:block; margin-bottom:2px;">⚡ Энергия (Бег: зажми Shift):</span>
+        <span style="font-size:11px; color:#ccc; display:block; margin-bottom:2px;">⚡ Энергия (Бег: зажми Shift):</span>
         <div style="width: 150px; background: #333; height: 8px; border-radius: 4px; overflow:hidden; border:1px solid #555;">
           <div id="hud-stamina-bar" style="background:#ffd700; width:100%; height:100%; transition: width 0.1s;"></div>
         </div>
@@ -810,7 +818,7 @@ export class WorldScene extends Phaser.Scene {
       <div style="font-size:12px; color:#aaa; margin-top:8px;">Игроков рядом: <span id="hud-players">1</span></div>
       <div style="font-size:11px; color:#ff9900; margin-top:2px;">Клавиша L: лаг-симулятор (${this.simulatedLagMs}мс)</div>
       
-      <button id="btn-toggle-inv" style="margin-top:10px; width:100%; padding:6px; background:#7cfc00; color:#050505; border:none; border-radius:3px; font-weight:bold; cursor:pointer;">ИНВЕНТАРЬ (I)</button>
+      <button id="btn-toggle-inv" style="margin-top:10px; width:100%; padding:8px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; border-radius:4px; font-weight:bold; cursor:pointer; font-family: monospace; image-rendering: pixelated; color:#000;">ИНВЕНТАРЬ (I)</button>
       
       <!-- Индикатор автомата сдачи -->
       <div id="kiosk-prompt-indicator" style="display:none; margin-top:10px; background:rgba(255,215,0,0.2); color:#ffd700; border:1px solid #ffd700; padding:6px; border-radius:3px; text-align:center; font-weight:bold; animation: pulse 1s infinite alternate;">
@@ -840,8 +848,8 @@ export class WorldScene extends Phaser.Scene {
     inv.style.left = '50%';
     inv.style.top = '50%';
     inv.style.transform = 'translate(-50%, -50%)';
-    inv.style.background = 'rgba(20,20,20,0.98)';
-    inv.style.border = '3px solid #7cfc00';
+    inv.style.background = "url('/assets/ui/panel-bg.webp') repeat";
+    inv.style.border = '4px solid #7cfc00';
     inv.style.borderRadius = '8px';
     inv.style.padding = '18px';
     inv.style.fontFamily = 'monospace';
@@ -849,6 +857,7 @@ export class WorldScene extends Phaser.Scene {
     inv.style.boxShadow = '0 5px 25px rgba(0,0,0,0.8)';
     inv.style.display = 'none';
     inv.style.pointerEvents = 'auto';
+    inv.style.imageRendering = 'pixelated';
 
     inv.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid #333; padding-bottom:6px;">
@@ -897,15 +906,16 @@ export class WorldScene extends Phaser.Scene {
     kiosk.style.left = '10%';
     kiosk.style.top = '50%';
     kiosk.style.transform = 'translateY(-50%)';
-    kiosk.style.background = 'rgba(15,15,15,0.98)';
-    kiosk.style.border = '3px solid #ffd700';
+    kiosk.style.background = "url('/assets/ui/panel-bg.webp') repeat";
+    kiosk.style.border = '4px solid #ffd700';
     kiosk.style.borderRadius = '8px';
-    kiosk.style.padding = '15px';
+    kiosk.style.padding = '18px';
     kiosk.style.width = '310px';
     kiosk.style.fontFamily = 'monospace';
     kiosk.style.zIndex = '99999';
     kiosk.style.boxShadow = '0 5px 25px rgba(0,0,0,0.8)';
     kiosk.style.pointerEvents = 'auto';
+    kiosk.style.imageRendering = 'pixelated';
 
     kiosk.innerHTML = `
       <h3 style="margin-top:0; border-bottom:2px solid #ffd700; padding-bottom:6px; color:#ffd700; text-align:center;">🏪 АВТОМАТ СДАЧИ БУТЫЛОК</h3>
@@ -913,8 +923,8 @@ export class WorldScene extends Phaser.Scene {
         Сдавай стеклотару в автомат! Кликни по бутылке в инвентаре, чтобы сдать её поштучно, либо нажми кнопку ниже.
       </p>
       
-      <button id="btn-recycle-all" style="width:100%; padding:10px; background:#ffd700; color:#111; border:none; border-radius:4px; font-weight:bold; cursor:pointer; font-size:14px; letter-spacing:1px; margin-bottom:8px;">♻️ СДАТЬ ВСЕ БУТЫЛКИ</button>
-      <button id="btn-close-kiosk" style="width:100%; padding:6px; background:#444; color:#fff; border:none; border-radius:4px; cursor:pointer;">Закрыть</button>
+      <button id="btn-recycle-all" style="width:100%; padding:10px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; color:#000; font-weight:bold; cursor:pointer; font-size:14px; letter-spacing:1px; margin-bottom:8px; font-family: monospace; image-rendering: pixelated;">♻️ СДАТЬ ВСЕ БУТЫЛКИ</button>
+      <button id="btn-close-kiosk" style="width:100%; padding:8px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; color:#ff3333; font-weight:bold; cursor:pointer; font-family: monospace; image-rendering: pixelated;">Закрыть</button>
     `;
 
     document.body.appendChild(kiosk);
@@ -946,15 +956,16 @@ export class WorldScene extends Phaser.Scene {
     cart.style.right = '10%';
     cart.style.top = '50%';
     cart.style.transform = 'translateY(-50%)';
-    cart.style.background = 'rgba(15,15,15,0.98)';
-    cart.style.border = '3px solid #00ccff';
+    cart.style.background = "url('/assets/ui/panel-bg.webp') repeat";
+    cart.style.border = '4px solid #00ccff';
     cart.style.borderRadius = '8px';
-    cart.style.padding = '15px';
+    cart.style.padding = '18px';
     cart.style.width = '320px';
     cart.style.fontFamily = 'monospace';
     cart.style.zIndex = '99999';
     cart.style.boxShadow = '0 5px 25px rgba(0,0,0,0.8)';
     cart.style.pointerEvents = 'auto';
+    cart.style.imageRendering = 'pixelated';
 
     document.body.appendChild(cart);
     this.foodCartEl = cart;
@@ -967,9 +978,9 @@ export class WorldScene extends Phaser.Scene {
 
     // В зависимости от текущего тира рюкзака, показываем доступные апгрейды
     const upgradeText = this.backpackTier === 1 
-      ? `<button id="btn-upgrade-bag-2" style="width:100%; padding:8px; background:#00ccff; color:#000; border:none; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:8px;">👜 Купить Сумку Adidas ($15.00)</button>` 
+      ? `<button id="btn-upgrade-bag-2" style="width:100%; padding:10px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:8px; font-family: monospace; image-rendering: pixelated;">👜 Купить Сумку Adidas ($15.00)</button>` 
       : this.backpackTier === 2 
-      ? `<button id="btn-upgrade-bag-3" style="width:100%; padding:8px; background:#7cfc00; color:#000; border:none; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:8px;">🎒 Купить Рюкзак туриста ($45.00)</button>`
+      ? `<button id="btn-upgrade-bag-3" style="width:100%; padding:10px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:8px; font-family: monospace; image-rendering: pixelated;">🎒 Купить Рюкзак туриста ($45.00)</button>`
       : `<div style="text-align:center; padding:8px; background:#333; color:#aaa; border-radius:4px; margin-bottom:8px;">У тебя максимальный Рюкзак!</div>`;
 
     this.foodCartEl.innerHTML = `
@@ -979,26 +990,26 @@ export class WorldScene extends Phaser.Scene {
       
       <div style="margin-bottom:12px;">
         <strong style="color:#ffd700; display:block; margin-bottom:4px;">🍕 ГОРЯЧЕЕ ПИТАНИЕ:</strong>
-        <button id="btn-buy-shawa" style="width:100%; padding:8px; background:#ffd700; color:#000; border:none; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between;">
+        <button id="btn-buy-shawa" style="width:100%; padding:10px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between; font-family: monospace; image-rendering: pixelated;">
           <span>🌯 Сытная Шаурма</span>
           <span>$1.50</span>
         </button>
-        <span style="font-size:10px; color:#aaa; display:block; margin-bottom:8px;">Восстанавливает 100% энергии + 20 сек бесконечного спринта!</span>
+        <span style="font-size:10px; color:#ccc; display:block; margin-bottom:8px;">Восстанавливает 100% энергии + 20 сек бесконечного спринта!</span>
 
-        <button id="btn-buy-energy" style="width:100%; padding:8px; background:#ff6b6b; color:#fff; border:none; border-radius:4px; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between;">
+        <button id="btn-buy-energy" style="width:100%; padding:10px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; color:#000; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; font-family: monospace; image-rendering: pixelated;">
           <span>⚡ Энергетик "Ягуар"</span>
           <span>$3.00</span>
         </button>
-        <span style="font-size:10px; color:#aaa; display:block;">Даёт безумную суперскорость бега на 30 секунд!</span>
+        <span style="font-size:10px; color:#ccc; display:block;">Даёт безумную суперскорость бега на 30 секунд!</span>
       </div>
 
       <div style="margin-bottom:12px; border-top:1px solid #333; padding-top:10px;">
         <strong style="color:#7cfc00; display:block; margin-bottom:6px;">🎒 УЛУЧШИТЬ СУМКУ:</strong>
         ${upgradeText}
-        <span style="font-size:10px; color:#aaa; display:block;">Увеличение лимита веса: Пакет (8кг) ➔ Сумка (15кг) ➔ Рюкзак (30кг)</span>
+        <span style="font-size:10px; color:#ccc; display:block;">Увеличение лимита веса: Пакет (8кг) ➔ Сумка (15кг) ➔ Рюкзак (30кг)</span>
       </div>
 
-      <button id="btn-close-food" style="width:100%; padding:6px; background:#444; color:#fff; border:none; border-radius:4px; cursor:pointer; margin-top:4px;">Выйти из ларька</button>
+      <button id="btn-close-food" style="width:100%; padding:8px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; color:#ff3333; font-weight:bold; cursor:pointer; margin-top:4px; font-family: monospace; image-rendering: pixelated;">Выйти из ларька</button>
     `;
 
     // Слушатели кликов
@@ -1085,26 +1096,24 @@ export class WorldScene extends Phaser.Scene {
       
       slot.style.width = '70px';
       slot.style.height = '70px';
-      slot.style.background = 'rgba(50,50,50,0.5)';
-      slot.style.border = '2px solid #555';
+      slot.style.background = "url('/assets/ui/slot-bg.webp') no-repeat center";
+      slot.style.backgroundSize = '100% 100%';
+      slot.style.border = 'none';
       slot.style.borderRadius = '6px';
       slot.style.display = 'flex';
       slot.style.alignItems = 'center';
       slot.style.justifyContent = 'center';
       slot.style.position = 'relative';
       slot.style.cursor = item ? 'pointer' : 'default';
-      slot.style.transition = 'border-color 0.15s, background 0.15s';
+      slot.style.imageRendering = 'pixelated';
 
       if (item) {
-        slot.style.border = '2px solid #7cfc00';
-        slot.style.background = 'rgba(124,252,0,0.1)';
-
         const def = BOTTLE_TYPES[item];
         const webpPath = `/assets/props/flat/bottles/${item}.webp`;
 
         slot.innerHTML = `
-          <img src="${webpPath}" style="max-width:48px; max-height:48px; object-fit:contain;" />
-          <div style="position:absolute; right:4px; bottom:2px; font-size:10px; color:#fff; background:#000000aa; padding:1px 3px; border-radius:2px;">
+          <img src="${webpPath}" style="max-width:44px; max-height:48px; object-fit:contain;" />
+          <div style="position:absolute; right:6px; bottom:6px; font-size:9px; color:#fff; background:#000000aa; padding:1px 3px; border-radius:2px; font-family: monospace;">
             ${def.weight}кг
           </div>
         `;

@@ -38,6 +38,11 @@ export class PreloadScene extends Phaser.Scene {
     this.load.spritesheet('player-sprites', '/assets/chars/player-spritesheet.webp', { frameWidth: 128, frameHeight: 128 });
     this.load.image('icon-coin', '/assets/icons/coin.webp');
 
+    // UI текстуры атласа
+    this.load.image('ui-panel-bg', '/assets/ui/panel-bg.webp');
+    this.load.image('ui-slot-bg', '/assets/ui/slot-bg.webp');
+    this.load.image('ui-button-bg', '/assets/ui/button-bg.webp');
+
     // Квартиры, стены и ларёк с шаурмой
     this.load.image('apartment-1', '/assets/props/flat/buildings/apartment-1.webp');
     this.load.image('apartment-2', '/assets/props/flat/buildings/apartment-2.webp');
