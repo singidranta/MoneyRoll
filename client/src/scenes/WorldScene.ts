@@ -760,27 +760,27 @@ export class WorldScene extends Phaser.Scene {
     hud.style.position = 'fixed';
     hud.style.left = '16px';
     hud.style.top = '16px';
-    hud.style.background = "url('/assets/ui/panel-bg.webp') repeat";
+    hud.style.background = 'rgba(15,15,15,0.92)';
+    hud.style.backdropFilter = 'blur(10px)';
     hud.style.color = '#ffffff';
-    hud.style.border = '4px solid #7cfc00';
+    hud.style.border = '3px solid #7cfc00';
     hud.style.borderRadius = '10px';
     hud.style.padding = '18px 24px';
     hud.style.fontFamily = 'monospace';
-    hud.style.fontSize = '18px'; // Было 14px -> стало крупно 18px!
+    hud.style.fontSize = '18px';
     hud.style.zIndex = '9999';
     hud.style.lineHeight = '1.6';
-    hud.style.boxShadow = '0 5px 20px rgba(0,0,0,0.7)';
-    hud.style.imageRendering = 'pixelated';
-    hud.style.width = '320px'; // Фиксированная сочная ширина
+    hud.style.boxShadow = '0 5px 25px rgba(0,0,0,0.6)';
+    hud.style.width = '320px';
 
     hud.innerHTML = `
       <div style="font-weight:bold; font-size:22px; margin-bottom:8px; color:#fff; display:flex; align-items:center;">
-        <img src="/assets/chars/player.webp" style="width:36px; height:36px; margin-right:12px; border-radius:50%;" /> MONEYROLL HUD
+        🎒 MONEYROLL HUD
       </div>
       <div id="hud-money" style="display:flex; align-items:center; margin-bottom:6px; font-weight:bold; font-size:20px; color:#7cfc00;">
-        <img src="/assets/icons/coin.webp" style="width:24px; height:24px; margin-right:8px;" /> Баланс: $5.00
+        🪙 Баланс: $5.00
       </div>
-      <div id="hud-weight" style="font-size:16px;">Сумка: Пакет (0.0 / 8.0 кг)</div>
+      <div id="hud-weight">Сумка: Пакет (0.0 / 8.0 кг)</div>
       
       <!-- Полоска выносливости (Stamina) -->
       <div style="margin-top:8px;">
@@ -793,7 +793,7 @@ export class WorldScene extends Phaser.Scene {
       <div style="font-size:14px; color:#ccc; margin-top:10px;">Игроков рядом: <span id="hud-players">1</span></div>
       <div style="font-size:12px; color:#ff9900; margin-top:4px;">Клавиша L: лаг-симулятор (${this.simulatedLagMs}мс)</div>
       
-      <button id="btn-toggle-inv" style="margin-top:14px; width:100%; padding:12px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; border-radius:4px; font-weight:bold; cursor:pointer; font-family: monospace; image-rendering: pixelated; color:#000; font-size:16px; transition: transform 0.1s;">ОТКРЫТЬ РЮКЗАК (I)</button>
+      <button id="btn-toggle-inv" style="margin-top:14px; width:100%; padding:12px; background: #7cfc00; border: none; border-radius: 6px; font-weight:bold; cursor:pointer; font-family: monospace; color:#000; font-size:16px; transition: background 0.15s, transform 0.1s;">ОТКРЫТЬ РЮКЗАК (I)</button>
       
       <!-- Индикатор автомата сдачи -->
       <div id="kiosk-prompt-indicator" style="display:none; margin-top:12px; background:rgba(255,215,0,0.2); color:#ffd700; border:2px solid #ffd700; padding:10px; border-radius:4px; text-align:center; font-weight:bold; font-size:14px; animation: pulse 1s infinite alternate;">
@@ -1025,13 +1025,13 @@ export class WorldScene extends Phaser.Scene {
     if (!this.hudOverlayEl) return;
 
     const maxLimit = this.backpackTier === 1 ? 8.0 : this.backpackTier === 2 ? 15.0 : 30.0;
-    const bagName = this.backpackTier === 1 ? 'Пакет' : this.backpackTier === 2 ? 'Сумка Adidas' : 'Рюкзак туриста';
+    const bagName = this.backpackTier === 1 ? 'Пакет' : this.backpackTier === 2 ? 'Сумка Adidas' : 'Рюкзак';
 
     const moneyEl = this.hudOverlayEl.querySelector('#hud-money');
-    if (moneyEl) moneyEl.innerHTML = `<img src="/assets/icons/coin.webp" style="width:18px; height:18px; margin-right:6px;" /> Баланс: <strong style="color:#fff;">$${this.localMoney.toFixed(2)}</strong>`;
+    if (moneyEl) moneyEl.innerHTML = `🪙 $${this.localMoney.toFixed(2)}`;
 
     const weightEl = this.hudOverlayEl.querySelector('#hud-weight');
-    if (weightEl) weightEl.innerHTML = `Сумка: <strong style="color:#fff;">${bagName}</strong> (${this.currentWeight.toFixed(1)} / ${maxLimit} кг)`;
+    if (weightEl) weightEl.innerHTML = `🎒 ${bagName} (${this.currentWeight.toFixed(1)} / ${maxLimit} кг)`;
 
     const weightBar = this.hudOverlayEl.querySelector('#hud-weight-bar') as HTMLDivElement;
     if (weightBar) {
