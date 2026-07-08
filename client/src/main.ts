@@ -2,8 +2,17 @@ import Phaser from 'phaser';
 import { GameConfig } from './config/GameConfig';
 import { EditorGameConfig } from './config/EditorGameConfig';
 
-const mode = import.meta.env.VITE_MR_MODE;
-const isEditor = mode === 'editor';
+// Режим определяется через URL-параметр `?mode=editor`.
+// Так кросс-платформенно: не зависит от shell (cmd.exe не понимает
+// inline-VITE_MR_MODE, а URL работает везде).
+const modeParam = (() => {
+  try {
+    return new URL(window.location.href).searchParams.get('mode');
+  } catch {
+    return null;
+  }
+})();
+const isEditor = modeParam === 'editor';
 
 const container = document.getElementById('game');
 if (!container) {

@@ -63,7 +63,13 @@ async function loadMap(): Promise<MapDocument> {
     }
     return { ...parsed, tiles, version: 1 };
   } catch (err) {
-    console.warn('[MoneyRoll][server] cannot load map.json (using empty):', err);
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      // Первый запуск — файла ещё нет, это нормально.
+      console.log('[MoneyRoll][server] no map.json yet — starting with empty map');
+    } else {
+      console.warn('[MoneyRoll][server] cannot load map.json (using empty):', err);
+    }
     return emptyMap();
   }
 }
