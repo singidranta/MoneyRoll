@@ -100,21 +100,23 @@ export class World {
   }
 
   private tickSpawner(spawner: MapEntity, maxBottles: number): void {
-    // Считаем сколько динамических бутылок сейчас находится рядом со спавнером (в радиусе 3 клеток)
+    const radius = spawner.properties.spawnRadius ?? 3; // Получаем настраиваемый радиус спавна (в клетках)
+
+    // Считаем сколько динамических бутылок сейчас находится рядом со спавнером (в радиусе спавна)
     let nearbyCount = 0;
     for (const b of this.bottles.values()) {
       const cellX = Math.floor(b.x / 128);
       const cellY = Math.floor(b.y / 128);
-      if (Math.abs(cellX - spawner.cellX) <= 3 && Math.abs(cellY - spawner.cellY) <= 3) {
+      if (Math.abs(cellX - spawner.cellX) <= radius && Math.abs(cellY - spawner.cellY) <= radius) {
         nearbyCount++;
       }
     }
 
     if (nearbyCount >= maxBottles) return;
 
-    // Спавним 1 бутылку в свободной соседней клетке (в радиусе 2 клеток)
-    const dx = Math.floor(Math.random() * 5) - 2; // -2..2
-    const dy = Math.floor(Math.random() * 5) - 2; // -2..2
+    // Спавним 1 бутылку в свободной соседней клетке (в радиусе спавна)
+    const dx = Math.floor(Math.random() * (radius * 2 + 1)) - radius; // -radius..radius
+    const dy = Math.floor(Math.random() * (radius * 2 + 1)) - radius; // -radius..radius
     const targetX = spawner.cellX + dx;
     const targetY = spawner.cellY + dy;
 

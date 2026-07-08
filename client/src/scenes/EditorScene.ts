@@ -35,6 +35,10 @@ export class EditorScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   private coordText!: Phaser.GameObjects.Text;
 
+  // Клавиши перемещения камеры (полёт по карте)
+  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  private wasdKeys!: any;
+
   constructor() {
     super({ key: 'Editor' });
   }
@@ -46,8 +50,15 @@ export class EditorScene extends Phaser.Scene {
     // Центрируем камеру по умолчанию
     this.cameras.main.centerOn(PIXEL_WIDTH / 2, PIXEL_HEIGHT / 2);
 
+    // Инициализируем клавиши перемещения камеры
+    this.cursors = this.input.keyboard!.createCursorKeys();
+    this.wasdKeys = this.input.keyboard!.addKeys('W,A,S,D') as any;
+
     // Кастомный курсор
     this.input.setDefaultCursor('crosshair');
+
+    // Отключаем дефолтное контекстное меню на ПКМ
+    this.input.mouse!.disableContextMenu();
 
     // Рисуем сетку
     this.drawGridBackground();
@@ -107,6 +118,23 @@ export class EditorScene extends Phaser.Scene {
     });
 
     console.log('[MoneyRoll] Editor ready!');
+  }
+
+  update(): void {
+    // ───── Свободный полёт камеры по карте (WASD или Стрелки) ─────
+    const speed = 12;
+    if (this.wasdKeys.W.isDown || this.cursors.up.isDown) {
+      this.cameras.main.scrollY -= speed;
+    }
+    if (this.wasdKeys.S.isDown || this.cursors.down.isDown) {
+      this.cameras.main.scrollY += speed;
+    }
+    if (this.wasdKeys.A.isDown || this.cursors.left.isDown) {
+      this.cameras.main.scrollX -= speed;
+    }
+    if (this.wasdKeys.D.isDown || this.cursors.right.isDown) {
+      this.cameras.main.scrollX += speed;
+    }
   }
 
   private drawGridBackground(): void {
@@ -202,12 +230,15 @@ export class EditorScene extends Phaser.Scene {
       const visualContainer = this.add.container(px, py);
       visualContainer.setDepth(100);
 
-      // Круг зоны спавна
+      // Круг зоны спавна (Customizable Territory!)
+      const radiusInCells = entity.properties.spawnRadius ?? 3;
+      const radiusInPixels = radiusInCells * TILE_SIZE;
+
       const rangeCircle = this.add.graphics();
       rangeCircle.lineStyle(2, 0xffd700, 0.6);
-      rangeCircle.strokeCircle(0, 0, 150); // примерный радиус спавна
+      rangeCircle.strokeCircle(0, 0, radiusInPixels);
 
-      // Фоновая метка спавнера
+      // Фоновая зона спавнера
       const mark = this.add.rectangle(0, 0, 80, 80, 0xffd700, 0.2);
       mark.setStrokeStyle(2, 0xffd700, 0.8);
 
@@ -215,13 +246,15 @@ export class EditorScene extends Phaser.Scene {
       const botImg = this.add.image(0, 0, 'bottle-water');
       botImg.setScale(0.7);
 
-      // Текст интервала
-      const label = this.add.text(0, -50, `Спавнер (${entity.properties.spawnInterval ?? 15}с)`, {
+      // Текст интервала и радиуса зоны
+      const labelText = `Территория спавна\nРадиус: ${radiusInCells} кл (${entity.properties.spawnInterval ?? 15}с)`;
+      const label = this.add.text(0, -60, labelText, {
         fontFamily: 'monospace',
         fontSize: '11px',
         color: '#ffd700',
         backgroundColor: '#000000aa',
-        padding: { x: 4, y: 2 }
+        align: 'center',
+        padding: { x: 5, y: 3 }
       });
       label.setOrigin(0.5);
 
@@ -269,6 +302,14 @@ export class EditorScene extends Phaser.Scene {
 
   private handlePointerMove(pointer: Phaser.Input.Pointer): void {
     if (!this.mapJson) return;
+
+    // ───── Свободное перетаскивание карты мышкой (Зажатая Space + ЛКМ или Средняя Кнопка Мыши) ─────
+    if (pointer.isDown && (pointer.button === 1 || this.input.keyboard!.addKey('SPACE').isDown)) {
+      this.cameras.main.scrollX -= (pointer.x - pointer.prevPosition.x);
+      this.cameras.main.scrollY -= (pointer.y - pointer.prevPosition.y);
+      return;
+    }
+
     const cell = this.worldToCell(pointer.worldX, pointer.worldY);
     if (!cell) {
       if (this.ghost) this.ghost.setVisible(false);
@@ -318,9 +359,10 @@ export class EditorScene extends Phaser.Scene {
       }
 
     } else if (this.currentTool === 'entity') {
-      // Получаем свойства из HTML Sidebar
+      // Получаем свойства из HTML Sidebar (включая customizable spawn territory!)
       const intervalVal = parseInt((document.getElementById('prop-interval') as HTMLInputElement)?.value || '15');
       const maxVal = parseInt((document.getElementById('prop-max') as HTMLInputElement)?.value || '3');
+      const radiusVal = parseInt((document.getElementById('prop-radius') as HTMLInputElement)?.value || '3');
 
       // Создаем объект MapEntity
       const newEntity: MapEntity = {
@@ -332,6 +374,7 @@ export class EditorScene extends Phaser.Scene {
         properties: {
           spawnInterval: intervalVal,
           maxBottles: maxVal,
+          spawnRadius: radiusVal,
           label: this.selectedEntityType === 'building' ? 'МАГАЗИН' : this.selectedEntityType === 'npc' ? 'Торговец' : undefined
         }
       };
@@ -447,7 +490,7 @@ export class EditorScene extends Phaser.Scene {
   private hudContent(): string {
     const count = this.mapJson ? Object.keys(this.mapJson.tiles).length : 0;
     const objCount = this.mapJson ? Object.keys(this.mapJson.entities ?? {}).length : 0;
-    return `РЕДАКТОР · Клеток: ${count}/900 · Объектов: ${objCount}\n[R] Повернуть · [Ctrl+S] Быстрое сохранение`;
+    return `РЕДАКТОР · Клеток: ${count}/900 · Объектов: ${objCount}\nWASD / Стрелочки — Свободный полёт по карте!\nЗажатый Space + ЛКМ — Перетаскивание камеры!`;
   }
 
   private refreshStatus(text: string): void {
@@ -461,7 +504,6 @@ export class EditorScene extends Phaser.Scene {
   // ───── HTML Sidebar UI Panel ─────
 
   private createSidebarUI(): void {
-    // Удаляем старую панель если есть
     this.removeSidebarUI();
 
     const sidebar = document.createElement('div');
@@ -521,9 +563,13 @@ export class EditorScene extends Phaser.Scene {
             Интервал спавна (сек):
             <input type="number" id="prop-interval" value="15" min="2" style="width:100%; box-sizing:border-box; background:#111; color:#7cfc00; border:1px solid #555; padding:4px; border-radius:3px; margin-top:2px;" />
           </label>
-          <label style="display:block;">
+          <label style="display:block; margin-bottom:8px;">
             Макс. бутылок рядом:
             <input type="number" id="prop-max" value="3" min="1" style="width:100%; box-sizing:border-box; background:#111; color:#7cfc00; border:1px solid #555; padding:4px; border-radius:3px; margin-top:2px;" />
+          </label>
+          <label style="display:block;">
+            Радиус территории (клет.):
+            <input type="number" id="prop-radius" value="3" min="1" max="10" style="width:100%; box-sizing:border-box; background:#111; color:#7cfc00; border:1px solid #555; padding:4px; border-radius:3px; margin-top:2px;" />
           </label>
         </div>
       </div>
