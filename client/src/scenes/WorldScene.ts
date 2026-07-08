@@ -881,25 +881,25 @@ export class WorldScene extends Phaser.Scene {
     kiosk.style.left = '10%';
     kiosk.style.top = '50%';
     kiosk.style.transform = 'translateY(-50%)';
-    kiosk.style.background = "url('/assets/ui/panel-bg.webp') repeat";
-    kiosk.style.border = '4px solid #ffd700';
-    kiosk.style.borderRadius = '8px';
-    kiosk.style.padding = '18px';
-    kiosk.style.width = '310px';
+    kiosk.style.background = 'rgba(15,15,15,0.92)';
+    kiosk.style.backdropFilter = 'blur(10px)';
+    kiosk.style.border = '3px solid #ffd700';
+    kiosk.style.borderRadius = '10px';
+    kiosk.style.padding = '20px';
+    kiosk.style.width = '320px';
     kiosk.style.fontFamily = 'monospace';
     kiosk.style.zIndex = '99999';
-    kiosk.style.boxShadow = '0 5px 25px rgba(0,0,0,0.8)';
+    kiosk.style.boxShadow = '0 5px 25px rgba(0,0,0,0.7)';
     kiosk.style.pointerEvents = 'auto';
-    kiosk.style.imageRendering = 'pixelated';
 
     kiosk.innerHTML = `
-      <h3 style="margin-top:0; border-bottom:2px solid #ffd700; padding-bottom:6px; color:#ffd700; text-align:center;">🏪 АВТОМАТ СДАЧИ БУТЫЛОК</h3>
-      <p style="font-size:12px; color:#ccc; line-height:1.4; margin-bottom:12px; text-align:center;">
+      <h3 style="margin-top:0; border-bottom:2px solid #ffd700; padding-bottom:6px; color:#ffd700; text-align:center; font-size:20px;">🏪 АВТОМАТ СДАЧИ БУТЫЛОК</h3>
+      <p style="font-size:14px; color:#ccc; line-height:1.5; margin-bottom:14px; text-align:center;">
         Сдавай стеклотару в автомат! Кликни по бутылке в инвентаре, чтобы сдать её поштучно, либо нажми кнопку ниже.
       </p>
       
-      <button id="btn-recycle-all" style="width:100%; padding:10px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; color:#000; font-weight:bold; cursor:pointer; font-size:14px; letter-spacing:1px; margin-bottom:8px; font-family: monospace; image-rendering: pixelated;">♻️ СДАТЬ ВСЕ БУТЫЛКИ</button>
-      <button id="btn-close-kiosk" style="width:100%; padding:8px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; color:#ff3333; font-weight:bold; cursor:pointer; font-family: monospace; image-rendering: pixelated;">Закрыть</button>
+      <button id="btn-recycle-all" style="width:100%; padding:12px; background: #ffd700; border:none; color:#000; font-weight:bold; cursor:pointer; font-size:15px; letter-spacing:1px; margin-bottom:8px; font-family: monospace; border-radius:6px; transition: transform 0.1s;">♻️ СДАТЬ ВСЕ БУТЫЛКИ</button>
+      <button id="btn-close-kiosk" style="width:100%; padding:10px; background: #333; border: 1px solid #ff3333; color:#ff3333; font-weight:bold; cursor:pointer; font-family: monospace; border-radius:6px;">Закрыть</button>
     `;
 
     document.body.appendChild(kiosk);
@@ -931,16 +931,16 @@ export class WorldScene extends Phaser.Scene {
     cart.style.right = '10%';
     cart.style.top = '50%';
     cart.style.transform = 'translateY(-50%)';
-    cart.style.background = "url('/assets/ui/panel-bg.webp') repeat";
-    cart.style.border = '4px solid #00ccff';
-    cart.style.borderRadius = '8px';
-    cart.style.padding = '18px';
+    cart.style.background = 'rgba(15,15,15,0.92)';
+    cart.style.backdropFilter = 'blur(10px)';
+    cart.style.border = '3px solid #00ccff';
+    cart.style.borderRadius = '10px';
+    cart.style.padding = '20px';
     cart.style.width = '320px';
     cart.style.fontFamily = 'monospace';
     cart.style.zIndex = '99999';
-    cart.style.boxShadow = '0 5px 25px rgba(0,0,0,0.8)';
+    cart.style.boxShadow = '0 5px 25px rgba(0,0,0,0.7)';
     cart.style.pointerEvents = 'auto';
-    cart.style.imageRendering = 'pixelated';
 
     document.body.appendChild(cart);
     this.foodCartEl = cart;
@@ -953,38 +953,38 @@ export class WorldScene extends Phaser.Scene {
 
     // В зависимости от текущего тира рюкзака, показываем доступные апгрейды
     const upgradeText = this.backpackTier === 1 
-      ? `<button id="btn-upgrade-bag-2" style="width:100%; padding:10px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:8px; font-family: monospace; image-rendering: pixelated;">👜 Купить Сумку Adidas ($15.00)</button>` 
+      ? `<button id="btn-upgrade-bag-2" style="width:100%; padding:12px; background: #00ccff; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:8px; font-family: monospace; border-radius:6px; transition: transform 0.1s;">👜 Купить Сумку Adidas ($15.00)</button>` 
       : this.backpackTier === 2 
-      ? `<button id="btn-upgrade-bag-3" style="width:100%; padding:10px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:8px; font-family: monospace; image-rendering: pixelated;">🎒 Купить Рюкзак туриста ($45.00)</button>`
+      ? `<button id="btn-upgrade-bag-3" style="width:100%; padding:12px; background: #7cfc00; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:8px; font-family: monospace; border-radius:6px; transition: transform 0.1s;">🎒 Купить Рюкзак туриста ($45.00)</button>`
       : `<div style="text-align:center; padding:8px; background:#333; color:#aaa; border-radius:4px; margin-bottom:8px;">У тебя максимальный Рюкзак!</div>`;
 
     this.foodCartEl.innerHTML = `
-      <h3 style="margin-top:0; border-bottom:2px solid #00ccff; padding-bottom:6px; color:#00ccff; text-align:center; display:flex; align-items:center; justify-content:center;">
-        <img src="/assets/props/flat/kiosk/food-cart.webp" style="width:24px; height:24px; margin-right:8px;" /> ШАУРМА У АШОТА
+      <h3 style="margin-top:0; border-bottom:2px solid #00ccff; padding-bottom:6px; color:#00ccff; text-align:center; display:flex; align-items:center; justify-content:center; font-size:20px;">
+        🏪 ШАУРМА У АШОТА
       </h3>
       
       <div style="margin-bottom:12px;">
         <strong style="color:#ffd700; display:block; margin-bottom:4px;">🍕 ГОРЯЧЕЕ ПИТАНИЕ:</strong>
-        <button id="btn-buy-shawa" style="width:100%; padding:10px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between; font-family: monospace; image-rendering: pixelated;">
+        <button id="btn-buy-shawa" style="width:100%; padding:12px; background: #ffd700; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between; font-family: monospace; border-radius:6px;">
           <span>🌯 Сытная Шаурма</span>
           <span>$1.50</span>
         </button>
-        <span style="font-size:10px; color:#ccc; display:block; margin-bottom:8px;">Восстанавливает 100% энергии + 20 сек бесконечного спринта!</span>
+        <span style="font-size:11px; color:#ccc; display:block; margin-bottom:8px;">Восстанавливает 100% энергии + 20 сек бесконечного спринта!</span>
 
-        <button id="btn-buy-energy" style="width:100%; padding:10px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; color:#000; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; font-family: monospace; image-rendering: pixelated;">
+        <button id="btn-buy-energy" style="width:100%; padding:12px; background: #ff6b6b; border:none; color:#fff; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; font-family: monospace; border-radius:6px;">
           <span>⚡ Энергетик "Ягуар"</span>
           <span>$3.00</span>
         </button>
-        <span style="font-size:10px; color:#ccc; display:block;">Даёт безумную суперскорость бега на 30 секунд!</span>
+        <span style="font-size:11px; color:#ccc; display:block;">Даёт безумную суперскорость бега на 30 секунд!</span>
       </div>
 
       <div style="margin-bottom:12px; border-top:1px solid #333; padding-top:10px;">
         <strong style="color:#7cfc00; display:block; margin-bottom:6px;">🎒 УЛУЧШИТЬ СУМКУ:</strong>
         ${upgradeText}
-        <span style="font-size:10px; color:#ccc; display:block;">Увеличение лимита веса: Пакет (8кг) ➔ Сумка (15кг) ➔ Рюкзак (30кг)</span>
+        <span style="font-size:11px; color:#ccc; display:block;">Увеличение лимита веса: Пакет (8кг) ➔ Сумка (15кг) ➔ Рюкзак (30кг)</span>
       </div>
 
-      <button id="btn-close-food" style="width:100%; padding:8px; background: url('/assets/ui/button-bg.webp') no-repeat center; background-size: 100% 100%; border:none; color:#ff3333; font-weight:bold; cursor:pointer; margin-top:4px; font-family: monospace; image-rendering: pixelated;">Выйти из ларька</button>
+      <button id="btn-close-food" style="width:100%; padding:10px; background: #333; border: 1px solid #ff3333; color:#ff3333; font-weight:bold; cursor:pointer; margin-top:4px; font-family: monospace; border-radius:6px;">Выйти из ларька</button>
     `;
 
     // Слушатели кликов
@@ -1071,18 +1071,21 @@ export class WorldScene extends Phaser.Scene {
       
       slot.style.width = '94px';
       slot.style.height = '94px';
-      slot.style.background = "url('/assets/ui/slot-bg.webp') no-repeat center";
-      slot.style.backgroundSize = '100% 100%';
-      slot.style.border = 'none';
+      slot.style.background = 'rgba(25,25,25,0.85)';
+      slot.style.border = '2px solid #444';
+      slot.style.boxShadow = 'inset 0 4px 10px rgba(0,0,0,0.6)';
       slot.style.borderRadius = '8px';
       slot.style.display = 'flex';
       slot.style.alignItems = 'center';
       slot.style.justifyContent = 'center';
       slot.style.position = 'relative';
       slot.style.cursor = item ? 'pointer' : 'default';
-      slot.style.imageRendering = 'pixelated';
 
       if (item) {
+        slot.style.border = '2px solid #7cfc00';
+        slot.style.background = 'rgba(124,252,0,0.06)';
+        slot.style.boxShadow = 'none';
+
         const def = BOTTLE_TYPES[item];
         const webpPath = `/assets/props/flat/bottles/${item}.webp`;
 
