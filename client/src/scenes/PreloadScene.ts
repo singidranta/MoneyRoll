@@ -34,7 +34,6 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('recycle-machine', '/assets/props/flat/kiosk/recycle-machine.webp');
 
     // Спрайт игрока, анимационный атлас и UI иконки
-    this.load.image('player', '/assets/chars/player.webp');
     this.load.spritesheet('player-sprites', '/assets/chars/player-spritesheet.webp', { frameWidth: 128, frameHeight: 128 });
     this.load.image('icon-coin', '/assets/icons/coin.webp');
 

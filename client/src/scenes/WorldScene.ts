@@ -18,8 +18,6 @@ type SnapshotEntry = {
   players: Map<string, { x: number; y: number }>;
 };
 
-type NetInfo = { ips: Array<{ iface: string; ip: string }>; port: number };
-
 export class WorldScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Sprite; // Персонаж теперь анимированный спрайт!
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -29,11 +27,13 @@ export class WorldScene extends Phaser.Scene {
   private keyTab!: Phaser.Input.Keyboard.Key;
   
   private netcode?: NetcodeClient;
-  private networkPanel!: Phaser.GameObjects.Text;
   private lastSentAt = 0;
   private myId: string | null = null;
   private remotePlayers = new Map<string, Phaser.GameObjects.Sprite>();
   private snapshotBuffer: SnapshotEntry[] = [];
+
+  // Физический коллайдер для препятствий
+  private obstaclesCollider!: Phaser.Physics.Arcade.Collider;
 
   // Игровая логика и сущности
   private localMoney = 5.0;
@@ -141,23 +141,7 @@ export class WorldScene extends Phaser.Scene {
 
     // Инициализируем статическую группу для физических коллизий (Стены, Квартиры)
     this.obstaclesGroup = this.physics.add.staticGroup();
-    this.physics.add.collider(this.player, this.obstaclesGroup);
-
-    // Панель «поделиться с друзьями» — справа вверху
-    this.networkPanel = this.add.text(0, 0, '[network…]', {
-      fontFamily: 'monospace',
-      fontSize: '12px',
-      color: '#aaccff',
-      backgroundColor: '#000000aa',
-      padding: { x: 8, y: 6 },
-      align: 'right',
-    });
-    this.networkPanel.setOrigin(1, 0);
-    this.networkPanel.setScrollFactor(0);
-    this.networkPanel.setDepth(1000);
-    this.positionNetworkPanel();
-
-    this.scale.on('resize', () => this.positionNetworkPanel());
+    this.obstaclesCollider = this.physics.add.collider(this.player, this.obstaclesGroup);
 
     // Настройка камеры
     this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
@@ -193,38 +177,9 @@ export class WorldScene extends Phaser.Scene {
     this.createHTMLHUD();
     this.createHTMLInventory();
 
-    void this.loadNetwork();
     void this.loadMapData();
 
     console.log('[MoneyRoll] World ready. I — инвентарь, E — автомат сдачи, L — пинг.');
-  }
-
-  private positionNetworkPanel(): void {
-    const pad = 16;
-    this.networkPanel.setPosition(
-      this.scale.width - pad,
-      pad
-    );
-  }
-
-  private async loadNetwork(): Promise<void> {
-    try {
-      const res = await fetch('/api/network');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const info = (await res.json()) as NetInfo;
-      this.renderNetworkPanel(info);
-    } catch (err) {
-      this.networkPanel.setText('[network info unavailable]');
-    }
-  }
-
-  private renderNetworkPanel(info: NetInfo): void {
-    const lines: string[] = ['— MULTIPLAYER ACCESS —'];
-    for (const { iface, ip } of info.ips) {
-      lines.push(`http://${ip}:${info.port}  (${iface})`);
-    }
-    lines.push('(Для игры с друзьями: используй Radmin VPN)');
-    this.networkPanel.setText(lines.join('\n'));
   }
 
   private async loadMapData(): Promise<void> {
@@ -283,12 +238,15 @@ export class WorldScene extends Phaser.Scene {
     }
     this.npcSpritesList = [];
 
-    // Полностью уничтожаем старую физическую группу коллизий, чтобы очистить кэш физического мира от "призрачных" тел!
+    // Полностью уничтожаем старый коллайдер и физическую группу коллизий, чтобы очистить кэш физического мира от "призрачных" тел!
+    if (this.obstaclesCollider) {
+      this.obstaclesCollider.destroy();
+    }
     if (this.obstaclesGroup) {
       this.obstaclesGroup.destroy(true);
     }
     this.obstaclesGroup = this.physics.add.staticGroup();
-    this.physics.add.collider(this.player, this.obstaclesGroup);
+    this.obstaclesCollider = this.physics.add.collider(this.player, this.obstaclesGroup);
 
     // Рендерим сущности из единой карты
     for (const entity of Object.values(this.mapJson.entities)) {

@@ -485,7 +485,7 @@ export class EditorScene extends Phaser.Scene {
       } else if (this.selectedEntityType === 'wall') {
         spriteKey = 'wall';
       } else if (this.selectedEntityType === 'npc') {
-        spriteKey = 'player';
+        spriteKey = 'player-sprites';
       } else {
         spriteKey = 'bottle-water';
       }
