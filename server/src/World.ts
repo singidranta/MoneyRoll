@@ -13,7 +13,7 @@ type Client = {
   x: number;
   y: number;
   money: number;
-  inventory: (BottleType | null)[]; // 12 слотов инвентаря
+  inventory: (BottleType | 'bag-adidas' | 'backpack-tourist' | 'shawarma' | 'energy' | null)[]; // 12 слотов инвентаря
   backpackTier: number; // 1 = Пакет (8кг), 2 = Сумка (15кг), 3 = Рюкзак (30кг)
 };
 
@@ -173,11 +173,19 @@ export class World {
     return this.clients.get(id);
   }
 
-  private calculateWeight(inv: (BottleType | null)[]): number {
+  private calculateWeight(inv: (BottleType | 'bag-adidas' | 'backpack-tourist' | 'shawarma' | 'energy' | null)[]): number {
     let total = 0;
     for (const item of inv) {
       if (item) {
-        total += BOTTLE_TYPES[item].weight;
+        if (item === 'bag-adidas' || item === 'backpack-tourist') {
+          total += 0;
+        } else if (item === 'shawarma') {
+          total += 0.5;
+        } else if (item === 'energy') {
+          total += 0.3;
+        } else {
+          total += BOTTLE_TYPES[item].weight;
+        }
       }
     }
     return parseFloat(total.toFixed(2));
@@ -278,6 +286,14 @@ export class World {
         const bottleType = c.inventory[slotIdx];
         if (!bottleType) return;
 
+        if (bottleType === 'bag-adidas' || bottleType === 'backpack-tourist' || bottleType === 'shawarma' || bottleType === 'energy') {
+          c.ws.send(JSON.stringify({
+            type: 'sell-failed',
+            message: 'Автомат принимает только бутылки!'
+          }));
+          return;
+        }
+
         let nearKiosk = false;
         for (const kiosk of this.kiosks) {
           const kx = kiosk.cellX * 128 + 64;
@@ -336,7 +352,7 @@ export class World {
 
         for (let i = 0; i < INVENTORY_SLOTS; i++) {
           const type = c.inventory[i];
-          if (type) {
+          if (type && type !== 'bag-adidas' && type !== 'backpack-tourist' && type !== 'shawarma' && type !== 'energy') {
             totalGain += BOTTLE_TYPES[type].price;
             c.inventory[i] = null;
             soldCount++;

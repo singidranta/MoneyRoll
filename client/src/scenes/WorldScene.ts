@@ -3,14 +3,18 @@ import { connectNetcode, type NetcodeClient, type NetcodeMessage } from '../syst
 import { loadMap } from '../systems/MapSystem';
 import { BOTTLE_TYPES, INVENTORY_SLOTS, type BottleType, type ServerBottle } from '../../../shared/economy';
 import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, type MapDocument } from '../../../shared/map';
+import { SoundEffects } from '../systems/SoundEffects';
 
-const MAP_PIXEL_W = MAP_WIDTH * TILE_SIZE; // 30 * 128 = 3840
+const MAP_PIXEL_W = MAP_WIDTH * TILE_SIZE; // 20 * 128 = 2560
 const MAP_PIXEL_H = MAP_HEIGHT * TILE_SIZE;
 const SEND_INTERVAL_MS = 50;
 const SNAPSHOT_INTERP_DELAY_MS = 100;
-const REMOTE_TINT = 0xffaacc; // Розовый оттенок для других игроков
+const REMOTE_TINT = 0xffaacc;
 const DEFAULT_SPAWN = { x: 400, y: 300 };
-const MOVE_SPEED = 240;
+
+// Скорости уменьшены на 50% в соответствии со уменьшенными масштабами персонажа!
+const BASE_WALK_SPEED = 130;
+const BASE_SPRINT_SPEED = 200;
 
 type PeerSnapshot = { id: string; x: number; y: number };
 type SnapshotEntry = {
@@ -19,7 +23,7 @@ type SnapshotEntry = {
 };
 
 export class WorldScene extends Phaser.Scene {
-  private player!: Phaser.GameObjects.Sprite; // Персонаж теперь анимированный спрайт!
+  private player!: Phaser.GameObjects.Sprite;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<string, Phaser.Input.Keyboard.Key>;
   private keyE!: Phaser.Input.Keyboard.Key;
@@ -37,17 +41,28 @@ export class WorldScene extends Phaser.Scene {
 
   // Игровая логика и сущности
   private localMoney = 5.0;
-  private localInventory: (BottleType | null)[] = Array(INVENTORY_SLOTS).fill(null);
+  private localInventory: (BottleType | 'bag-adidas' | 'backpack-tourist' | 'shawarma' | 'energy' | null)[] = Array(INVENTORY_SLOTS).fill(null);
   private currentWeight = 0.0;
-  private backpackTier = 1; // 1 = Пакет, 2 = Сумка Adidas, 3 = Рюкзак
+  private backpackTier = 1; // 1 = Без сумки (4 слота, 2.5кг), 2 = Спортивная сумка Adidas (8 слотов, 15кг), 3 = Рюкзак туриста (12 слотов, 30кг)
+
+  // Экипированная сумка (для инвентаря)
+  private equippedBag: 'bag-adidas' | 'backpack-tourist' | null = null;
+
+  // Экипированная одежда (для бонусов!)
+  private hasJacket = false; // Куртка Adidas (+50% регенерация энергии)
+  private hasSneakers = false; // Кроссовки Nike (+30% скорость)
+  private hasCrown = false; // Корона (Косметика)
 
   // Система выносливости (Stamina)
   private stamina = 100.0;
   private isExhausted = false;
 
-  // Временные баффы
+  // Временные баффы еды
   private energyDrinkBuffTimer = 0.0;
   private shawarmaBuffTimer = 0.0;
+
+  // Таймер шагов (звук)
+  private footstepTimer = 0;
 
   private mapJson: MapDocument | null = null;
   private groundTileSprite?: Phaser.GameObjects.TileSprite;
@@ -65,11 +80,12 @@ export class WorldScene extends Phaser.Scene {
 
   // HTML UI элементы
   private hudOverlayEl?: HTMLDivElement;
-  private dashboardPanelEl?: HTMLDivElement; // Единый Дашборд-панель для объединения окон!
+  private dashboardPanelEl?: HTMLDivElement;
 
   private isInventoryOpen = false;
   private nearKioskId: string | null = null;
   private nearFoodCartEntity: any = null; // Текущий ларёк рядом
+  private nearClothingShopEntity: any = null; // Текущий магазин одежды рядом
 
   // Подсвечиваемая интерактивная кнопка [E] над объектом на карте!
   private usePrompt!: Phaser.GameObjects.Text;
@@ -90,7 +106,7 @@ export class WorldScene extends Phaser.Scene {
     this.keyI = kb.addKey(Phaser.Input.Keyboard.KeyCodes.I);
     this.keyTab = kb.addKey(Phaser.Input.Keyboard.KeyCodes.TAB);
 
-    // Фоновая трава по всей карте 30х30 в качестве основы
+    // Фоновая трава по всей карте 20х20 в качестве основы
     this.groundTileSprite = this.add.tileSprite(
       MAP_PIXEL_W / 2,
       MAP_PIXEL_H / 2,
@@ -100,9 +116,9 @@ export class WorldScene extends Phaser.Scene {
     );
     this.groundTileSprite.setDepth(0);
 
-    // Персонаж — сочный детализированный WebP спрайт!
-    this.player = this.add.sprite(DEFAULT_SPAWN.x, DEFAULT_SPAWN.y, 'player');
-    this.player.setScale(0.85);
+    // Персонаж — уменьшен на 50% (scale 0.42 вместо 0.85!)
+    this.player = this.add.sprite(DEFAULT_SPAWN.x, DEFAULT_SPAWN.y, 'player-sprites', 0);
+    this.player.setScale(0.42);
     this.player.setDepth(500);
 
     // Создаем анимации ходьбы из атласа spritesheet
@@ -133,13 +149,12 @@ export class WorldScene extends Phaser.Scene {
       });
     }
 
-    // Инициализируем физику для игрока
+    // Инициализируем физику для игрока (размеры уменьшены соразмерно масштабу!)
     this.physics.add.existing(this.player);
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setCollideWorldBounds(true);
-    // Профессиональный хитбокс у ног персонажа (для красивой глубины и легкого обхода углов!)
-    body.setSize(48, 48);
-    body.setOffset(40, 80);
+    body.setSize(24, 24); // Мягкий и компактный хитбокс
+    body.setOffset(20, 40);
 
     // Инициализируем статическую группу для физических коллизий (Стены, Квартиры)
     this.obstaclesGroup = this.physics.add.staticGroup();
@@ -169,7 +184,7 @@ export class WorldScene extends Phaser.Scene {
       ease: 'Sine.easeInOut'
     });
 
-    // Настройка камеры
+    // Настройка камеры (в режиме FIT она идеально центрирована!)
     this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
     this.cameras.main.setBackgroundColor('#0a0a0a');
     this.cameras.main.setBounds(0, 0, MAP_PIXEL_W, MAP_PIXEL_H);
@@ -263,7 +278,7 @@ export class WorldScene extends Phaser.Scene {
     }
     this.npcSpritesList = [];
 
-    // Полностью уничтожаем старый коллайдер и физическую группу коллизий, чтобы очистить кэш физического мира от "призрачных" тел!
+    // Полностью уничтожаем старый коллайдер и физическую группу коллизий
     if (this.obstaclesCollider) {
       this.obstaclesCollider.destroy();
     }
@@ -280,20 +295,27 @@ export class WorldScene extends Phaser.Scene {
 
       if (entity.type === 'kiosk') {
         const kioskSprite = this.add.image(px, py, 'recycle-machine');
-        kioskSprite.setScale(1.15);
+        kioskSprite.setScale(0.58); // Уменьшено на 50%!
         kioskSprite.setDepth(100);
         kioskSprite.setAngle(entity.rotation);
 
-        // Зеленое свечение
         const glow = this.add.graphics();
         glow.fillStyle(0x00ff66, 0.08);
-        glow.fillCircle(px, py, 140);
+        glow.fillCircle(px, py, 70); // Уменьшено на 50%!
         glow.setDepth(10);
 
         this.kiosksSpritesMap.set(entity.id, kioskSprite);
       } else if (entity.type === 'food-cart') {
         const kioskSprite = this.add.image(px, py, 'food-cart');
-        kioskSprite.setScale(1.0);
+        kioskSprite.setScale(0.5); // Уменьшено на 50%!
+        kioskSprite.setDepth(100);
+        kioskSprite.setAngle(entity.rotation);
+
+        this.kiosksSpritesMap.set(entity.id, kioskSprite);
+      } else if (entity.type === 'clothing-shop') {
+        // Рендерим магазин одежды на карте!
+        const kioskSprite = this.add.image(px, py, 'clothing-shop');
+        kioskSprite.setScale(0.5); // Уменьшено на 50%!
         kioskSprite.setDepth(100);
         kioskSprite.setAngle(entity.rotation);
 
@@ -302,33 +324,32 @@ export class WorldScene extends Phaser.Scene {
         // Твердые препятствия (Квартиры, Стены) — создаем вручную и добавляем статические тела
         const spriteKey = entity.type;
         const obstacle = this.add.image(px, py, spriteKey);
-        obstacle.setScale(1.0);
+        obstacle.setScale(0.5); // Уменьшено на 50%!
         obstacle.setAngle(entity.rotation);
         obstacle.setDepth(90);
         
-        // Вручную подключаем статическую физику к созданному спрайту
         this.physics.add.existing(obstacle, true); // true = static!
         const oBody = obstacle.body as Phaser.Physics.Arcade.StaticBody;
 
-        // Строгая и стабильная коллизия по размеру сетки (128x128) — полностью исключает любые баги и невидимые стены!
-        oBody.setSize(128, 128);
-        oBody.setOffset(0, 0);
-        oBody.updateFromGameObject(); // Синхронизируем тело с положением спрайта
+        // Строгая и стабильная коллизия по размеру уменьшенной сетки (64x64 вместо 128x128!)
+        oBody.setSize(64, 64);
+        oBody.setOffset(32, 32);
+        oBody.updateFromGameObject();
 
         this.obstaclesGroup.add(obstacle);
       } else if (entity.type === 'npc') {
         const npcContainer = this.add.container(px, py);
         npcContainer.setDepth(101);
 
-        const body = this.add.rectangle(0, 0, 48, 48, 0x00ccff);
-        body.setStrokeStyle(2, 0xffffff);
+        const body = this.add.rectangle(0, 0, 24, 24, 0x00ccff); // Уменьшено на 50%!
+        body.setStrokeStyle(1, 0xffffff);
 
-        const label = this.add.text(0, -35, entity.properties.label || 'NPC', {
+        const label = this.add.text(0, -20, entity.properties.label || 'NPC', {
           fontFamily: 'monospace',
-          fontSize: '11px',
+          fontSize: '9px',
           color: '#00ccff',
           backgroundColor: '#000000aa',
-          padding: { x: 4, y: 2 }
+          padding: { x: 3, y: 1 }
         }).setOrigin(0.5);
 
         npcContainer.add([body, label]);
@@ -382,9 +403,7 @@ export class WorldScene extends Phaser.Scene {
       }
 
       case 'map-reload': {
-        console.log('[MoneyRoll] Карта была обновлена! Перерисовываем...');
         void this.loadMapData();
-        
         for (const img of this.bottlesMap.values()) {
           img.destroy();
         }
@@ -471,7 +490,11 @@ export class WorldScene extends Phaser.Scene {
         this.removeBottleClient(bottleId);
         this.updateHUDUI();
         this.updateDashboard();
-        this.showFloatingText(text, this.player.x, this.player.y - 30, '#7cfc00');
+
+        // Воспроизводим ретро-звук подбора бутылки!
+        SoundEffects.playPopSound();
+
+        this.showFloatingText(text, this.player.x, this.player.y - 20, '#7cfc00');
         break;
       }
 
@@ -482,11 +505,11 @@ export class WorldScene extends Phaser.Scene {
 
         if (reason === 'already-taken') {
           this.removeBottleClient(bottleId);
-          this.showFloatingText('ОПЕРЕДИЛИ!', this.player.x, this.player.y - 30, '#ff3333');
+          this.showFloatingText('ОПЕРЕДИЛИ!', this.player.x, this.player.y - 20, '#ff3333');
         } else {
           const img = this.bottlesMap.get(bottleId);
           if (img) img.setVisible(true);
-          this.showFloatingText(text, this.player.x, this.player.y - 30, '#ff9900');
+          this.showFloatingText(text, this.player.x, this.player.y - 20, '#ff9900');
         }
         break;
       }
@@ -504,14 +527,17 @@ export class WorldScene extends Phaser.Scene {
         this.updateHUDUI();
         this.updateDashboard();
         
-        this.showFloatingText(text, this.player.x, this.player.y - 35, '#ffd700');
+        // Звук получения монет!
+        SoundEffects.playCoinSound();
+
+        this.showFloatingText(text, this.player.x, this.player.y - 20, '#ffd700');
         this.cameras.main.shake(150, 0.005);
         break;
       }
 
       case 'sell-failed': {
         const text = msg.message as string;
-        this.showFloatingText(text, this.player.x, this.player.y - 30, '#ff3333');
+        this.showFloatingText(text, this.player.x, this.player.y - 20, '#ff3333');
         break;
       }
 
@@ -526,14 +552,17 @@ export class WorldScene extends Phaser.Scene {
         this.updateHUDUI();
         this.updateDashboard();
 
-        this.showFloatingText(text, this.player.x, this.player.y - 40, '#ffd700');
+        // Воспроизводим ретро-звук апгрейда сумки!
+        SoundEffects.playUpgradeSound();
+
+        this.showFloatingText(text, this.player.x, this.player.y - 30, '#ffd700');
         this.cameras.main.shake(200, 0.008);
         break;
       }
 
       case 'upgrade-failed': {
         const text = msg.message as string;
-        this.showFloatingText(text, this.player.x, this.player.y - 30, '#ff3333');
+        this.showFloatingText(text, this.player.x, this.player.y - 20, '#ff3333');
         break;
       }
 
@@ -549,63 +578,26 @@ export class WorldScene extends Phaser.Scene {
           this.stamina = 100.0;
           this.isExhausted = false;
           this.shawarmaBuffTimer = 20.0;
+          // Звук поедания шаурмы!
+          SoundEffects.playEatSound();
         } else if (item === 'energy') {
           this.energyDrinkBuffTimer = 30.0;
+          // Звук выпивания энергетика!
+          SoundEffects.playDrinkSound();
         }
 
-        this.showFloatingText(text, this.player.x, this.player.y - 40, '#7cfc00');
+        this.showFloatingText(text, this.player.x, this.player.y - 30, '#7cfc00');
         break;
       }
 
       case 'buy-food-failed': {
         const text = msg.message as string;
-        this.showFloatingText(text, this.player.x, this.player.y - 30, '#ff3333');
+        this.showFloatingText(text, this.player.x, this.player.y - 20, '#ff3333');
         break;
       }
 
       default:
         console.log('[MoneyRoll] ws ←', msg);
-    }
-  }
-
-  // ───── Spawners ─────
-
-  private spawnBottleClient(b: ServerBottle): void {
-    if (this.bottlesMap.has(b.id)) return;
-
-    const def = BOTTLE_TYPES[b.type];
-    if (!def) return;
-
-    const img = this.add.image(b.x, b.y, def.spriteKey);
-    img.setScale(0.85);
-    img.setDepth(100);
-
-    this.tweens.add({
-      targets: img,
-      y: b.y - 8,
-      duration: 1200 + Math.random() * 400,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut'
-    });
-
-    this.bottlesMap.set(b.id, img);
-  }
-
-  private removeBottleClient(id: string): void {
-    const img = this.bottlesMap.get(id);
-    if (img) {
-      this.tweens.add({
-        targets: img,
-        scale: 0.1,
-        alpha: 0,
-        angle: 180,
-        duration: 200,
-        onComplete: () => {
-          img.destroy();
-        }
-      });
-      this.bottlesMap.delete(id);
     }
   }
 
@@ -633,29 +625,47 @@ export class WorldScene extends Phaser.Scene {
 
     const isSprinting = this.input.keyboard!.addKey('SHIFT').isDown && (vx !== 0 || vy !== 0) && !this.isExhausted;
     
-    let currentSpeed = MOVE_SPEED;
+    // Рассчитываем скорость игрока с учетом кроссовок (+25% к бегу!) и баффов
+    let moveSpeedLimit = this.hasSneakers ? BASE_WALK_SPEED + 40 : BASE_WALK_SPEED;
+    let sprintSpeedLimit = this.hasSneakers ? BASE_SPRINT_SPEED + 70 : BASE_SPRINT_SPEED;
+
+    let currentSpeed = moveSpeedLimit;
     if (this.energyDrinkBuffTimer > 0) {
-      currentSpeed = 440;
+      currentSpeed = sprintSpeedLimit + 100; // Ягуар дает безумный бафф
     } else if (isSprinting) {
-      currentSpeed = 350;
+      currentSpeed = sprintSpeedLimit;
     }
 
+    // Логика выносливости (Куртка Adidas дает +50% регенерации выносливости!)
     if (isSprinting && this.shawarmaBuffTimer <= 0) {
-      const drainRate = 18 * (1 + this.currentWeight / (this.backpackTier === 1 ? 8.0 : this.backpackTier === 2 ? 15.0 : 30.0));
+      const maxLimit = this.backpackTier === 1 ? 2.5 : this.backpackTier === 2 ? 15.0 : 30.0;
+      const drainRate = 18 * (1 + this.currentWeight / maxLimit);
       this.stamina = Math.max(0, this.stamina - drainRate * dt);
       if (this.stamina === 0) {
         this.isExhausted = true;
-        this.showFloatingText('УСТАЛ! Передохни!', this.player.x, this.player.y - 30, '#ff3333');
+        this.showFloatingText('УСТАЛ! Передохни!', this.player.x, this.player.y - 20, '#ff3333');
       }
     } else {
-      this.stamina = Math.min(100, this.stamina + 12 * dt);
+      const regenRate = this.hasJacket ? 18.0 : 12.0; // С курткой регенерируем в 1.5 раза быстрее!
+      this.stamina = Math.min(100, this.stamina + regenRate * dt);
       if (this.isExhausted && this.stamina >= 20) {
         this.isExhausted = false;
       }
     }
 
+    // Движение
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(vx * currentSpeed, vy * currentSpeed);
+
+    // Воспроизводим ретро-звуки шагов игрока при беге/ходьбе!
+    if (vx !== 0 || vy !== 0) {
+      this.footstepTimer += delta;
+      const stepInterval = isSprinting ? 220 : 350;
+      if (this.footstepTimer > stepInterval) {
+        this.footstepTimer = 0;
+        SoundEffects.playWalkSound();
+      }
+    }
 
     if (vx < 0) {
       this.player.play('walk-left', true);
@@ -680,9 +690,10 @@ export class WorldScene extends Phaser.Scene {
 
     this.updateHUDUI();
 
+    // Сбор бутылок (бутылки теперь уменьшены на 50%! Шкала пересечения уменьшена до 30 пикселей)
     for (const [id, img] of this.bottlesMap.entries()) {
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, img.x, img.y);
-      if (dist < 48) {
+      if (dist < 30) {
         if (img.visible) {
           img.setVisible(false);
           this.sendGameMessage({ type: 'pickup-bottle', bottleId: id });
@@ -690,9 +701,10 @@ export class WorldScene extends Phaser.Scene {
       }
     }
 
-    // ───── Взаимодействие с объектами карты ─────
+    // Взаимодействие с объектами
     let activeKioskId: string | null = null;
     let activeFoodCartEntity: any = null;
+    let activeClothingShopEntity: any = null;
     let targetX = 0;
     let targetY = 0;
 
@@ -702,11 +714,13 @@ export class WorldScene extends Phaser.Scene {
         const ky = entity.cellY * TILE_SIZE + TILE_SIZE / 2;
         const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, kx, ky);
 
-        if (dist < 100) {
+        if (dist < 90) {
           if (entity.type === 'kiosk') {
             activeKioskId = entity.id;
           } else if (entity.type === 'food-cart') {
             activeFoodCartEntity = entity;
+          } else if (entity.type === 'clothing-shop') {
+            activeClothingShopEntity = entity;
           }
           targetX = kx;
           targetY = ky;
@@ -717,23 +731,20 @@ export class WorldScene extends Phaser.Scene {
 
     this.nearKioskId = activeKioskId;
     this.nearFoodCartEntity = activeFoodCartEntity;
+    this.nearClothingShopEntity = activeClothingShopEntity;
 
-    // ───── Подсветка кнопки [E] прямо над активным объектом на карте! ─────
-    if (this.nearKioskId || this.nearFoodCartEntity) {
-      this.usePrompt.setPosition(targetX, targetY - 80);
+    // Подсветка кнопки [E] прямо над активным объектом
+    if (this.nearKioskId || this.nearFoodCartEntity || this.nearClothingShopEntity) {
+      this.usePrompt.setPosition(targetX, targetY - 60);
       this.usePrompt.setVisible(true);
 
       if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
-        if (this.nearKioskId) {
-          this.toggleInventory(true); // Открывает Дашборд с автоматом сдачи!
-        } else if (this.nearFoodCartEntity) {
-          this.toggleInventory(true); // Открывает Дашборд с ларьком шаурмы!
-        }
+        this.toggleInventory(true); // Открывает Dashboard с магазинами или автоматом!
       }
     } else {
       this.usePrompt.setVisible(false);
-      // Авто-закрытие дашборда при отдалении
-      if (this.isInventoryOpen) {
+      // Авто-закрытие Dashboard при отдалении от магазинов
+      if (this.isInventoryOpen && (this.nearKioskId === null && this.nearFoodCartEntity === null && this.nearClothingShopEntity === null)) {
         this.toggleInventory(false);
       }
     }
@@ -777,12 +788,12 @@ export class WorldScene extends Phaser.Scene {
     moneyPanel.style.top = '16px';
     moneyPanel.style.background = 'rgba(15,15,15,0.92)';
     moneyPanel.style.backdropFilter = 'blur(10px)';
-    moneyPanel.style.color = '#7cfc00';
+    moneyPanel.style.color = '#ffd700';
     moneyPanel.style.border = '3px solid #ffd700';
     moneyPanel.style.borderRadius = '10px';
     moneyPanel.style.padding = '12px 20px';
     moneyPanel.style.fontFamily = 'monospace';
-    moneyPanel.style.fontSize = '22px';
+    moneyPanel.style.fontSize = '24px';
     moneyPanel.style.fontWeight = 'bold';
     moneyPanel.style.boxShadow = '0 5px 25px rgba(0,0,0,0.6)';
     moneyPanel.style.zIndex = '9999';
@@ -818,7 +829,7 @@ export class WorldScene extends Phaser.Scene {
     `;
     hud.appendChild(statsPanel);
 
-    // 3. ИКОНКА РЮКЗАКА: Справа Снизу (только иконка!)
+    // 3. ИКОНКА РЮКЗАКА: Справа Снизу (круглая кнопка)
     const btnBackpack = document.createElement('button');
     btnBackpack.id = 'btn-toggle-backpack';
     btnBackpack.style.position = 'fixed';
@@ -851,11 +862,8 @@ export class WorldScene extends Phaser.Scene {
   }
 
   /**
-   * ЕДИНЫЙ ЕДИНСТВЕННЫЙ ДАШБОРД (Dashboard):
-   * Объединяет все окна в единый красивый side-by-side splitscreen!
-   * - Если открыт Kiosk: слева Автомат, справа Инвентарь.
-   * - Если открыт Food-Cart: слева Ларёк, справа Инвентарь.
-   * - Если открыт только инвентарь: по центру Инвентарь.
+   * ЕДИНЫЙ ДАШБОРД (Dashboard):
+   * Объединяет все окна в единый сочный side-by-side splitscreen!
    */
   private updateDashboard(): void {
     this.removeDashboardPanel();
@@ -876,7 +884,7 @@ export class WorldScene extends Phaser.Scene {
     document.body.appendChild(dashboard);
     this.dashboardPanelEl = dashboard;
 
-    // 1. ЛЕВАЯ ПАНЕЛЬ: Действие (Автомат или Шаурма, если игрок рядом с ними!)
+    // 1. ЛЕВАЯ ПАНЕЛЬ: Действие (Автомат, Ларёк шаурмы или Магазин одежды!)
     if (this.nearKioskId) {
       const kioskPanel = document.createElement('div');
       kioskPanel.style.background = 'rgba(15,15,15,0.92)';
@@ -911,7 +919,7 @@ export class WorldScene extends Phaser.Scene {
       const foodPanel = document.createElement('div');
       foodPanel.style.background = 'rgba(15,15,15,0.92)';
       foodPanel.style.backdropFilter = 'blur(10px)';
-      foodPanel.style.border = '3px solid #00ccff';
+      foodPanel.style.border = '3px solid #ff9900';
       foodPanel.style.borderRadius = '10px';
       foodPanel.style.padding = '20px';
       foodPanel.style.width = '320px';
@@ -919,55 +927,113 @@ export class WorldScene extends Phaser.Scene {
       foodPanel.style.boxShadow = '0 5px 25px rgba(0,0,0,0.7)';
       foodPanel.style.color = '#fff';
 
-      const upgradeText = this.backpackTier === 1 
-        ? `<button id="btn-upgrade-bag-2" style="width:100%; padding:12px; background: #00ccff; border:none; color:#000; font-weight:bold; cursor:pointer; border-radius:6px; font-family:monospace; transition: transform 0.1s;">👜 Купить Сумку Adidas ($15.00)</button>` 
-        : this.backpackTier === 2 
-        ? `<button id="btn-upgrade-bag-3" style="width:100%; padding:12px; background: #7cfc00; border:none; color:#000; font-weight:bold; cursor:pointer; border-radius:6px; font-family:monospace; transition: transform 0.1s;">🎒 Купить Рюкзак туриста ($45.00)</button>`
-        : `<div style="text-align:center; padding:8px; background:#333; color:#aaa; border-radius:4px;">У тебя максимальный Рюкзак!</div>`;
-
+      // Теперь в Ларьке Шаурмы продается только Еда (Шаурма и Ягуар), которая ложится в Инвентарь как предметы!
       foodPanel.innerHTML = `
-        <h3 style="margin-top:0; border-bottom:2px solid #00ccff; padding-bottom:6px; color:#00ccff; text-align:center; font-size:20px;">🏪 ШАУРМА У АШОТА</h3>
+        <h3 style="margin-top:0; border-bottom:2px solid #ff9900; padding-bottom:6px; color:#ff9900; text-align:center; font-size:20px;">🌯 ЛАРЁК У АШОТА</h3>
         
         <div style="margin-bottom:12px;">
-          <strong style="color:#ffd700; display:block; margin-bottom:4px;">🍕 ПИТАНИЕ:</strong>
+          <strong style="color:#ffd700; display:block; margin-bottom:4px;">🍕 ПИТАНИЕ (В инвентарь):</strong>
+          
           <button id="btn-buy-shawa" style="width:100%; padding:12px; background:#ffd700; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between; font-family:monospace; border-radius:6px;">
             <span>🌯 Сытная Шаурма</span>
             <span>$1.50</span>
           </button>
+          
           <button id="btn-buy-energy" style="width:100%; padding:12px; background:#ff6b6b; border:none; color:#fff; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; font-family:monospace; border-radius:6px;">
             <span>⚡ Энергетик "Ягуар"</span>
             <span>$3.00</span>
           </button>
         </div>
 
-        <div style="margin-bottom:12px; border-top:1px solid #333; padding-top:10px;">
-          <strong style="color:#7cfc00; display:block; margin-bottom:6px;">🎒 СУМКИ:</strong>
-          ${upgradeText}
-        </div>
+        <p style="font-size:11px; color:#ccc; line-height:1.4; margin-top:8px; text-align:center;">
+          Купленная еда пакуется в твой инвентарь справа. Кликни на неё в инвентаре, чтобы съесть/выпить!
+        </p>
 
-        <button id="btn-close-dashboard" style="width:100%; padding:10px; background:#333; border:1px solid #ff3333; color:#ff3333; font-weight:bold; cursor:pointer; border-radius:6px; font-family:monospace;">Закрыть</button>
+        <button id="btn-close-dashboard" style="width:100%; padding:10px; background:#333; border:1px solid #ff3333; color:#ff3333; font-weight:bold; cursor:pointer; border-radius:6px; font-family:monospace; margin-top:10px;">Закрыть</button>
       `;
 
       foodPanel.querySelector('#btn-buy-shawa')?.addEventListener('click', () => {
-        this.sendGameMessage({ type: 'buy-food', itemType: 'shawarma' });
+        this.buyItemToInventory('shawarma', 1.50);
       });
       foodPanel.querySelector('#btn-buy-energy')?.addEventListener('click', () => {
-        this.sendGameMessage({ type: 'buy-food', itemType: 'energy' });
-      });
-      foodPanel.querySelector('#btn-upgrade-bag-2')?.addEventListener('click', () => {
-        this.sendGameMessage({ type: 'upgrade-backpack', tier: 2 });
-      });
-      foodPanel.querySelector('#btn-upgrade-bag-3')?.addEventListener('click', () => {
-        this.sendGameMessage({ type: 'upgrade-backpack', tier: 3 });
+        this.buyItemToInventory('energy', 3.00);
       });
       foodPanel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => {
         this.toggleInventory(false);
       });
 
       dashboard.appendChild(foodPanel);
+
+    } else if (this.nearClothingShopEntity) {
+      // 👗 НОВЫЙ МАГАЗИН ОДЕЖДЫ И СУМОК!
+      const clothingPanel = document.createElement('div');
+      clothingPanel.style.background = 'rgba(15,15,15,0.92)';
+      clothingPanel.style.backdropFilter = 'blur(10px)';
+      clothingPanel.style.border = '3px solid #00ccff';
+      clothingPanel.style.borderRadius = '10px';
+      clothingPanel.style.padding = '20px';
+      clothingPanel.style.width = '330px';
+      clothingPanel.style.fontFamily = 'monospace';
+      clothingPanel.style.boxShadow = '0 5px 25px rgba(0,0,0,0.7)';
+      clothingPanel.style.color = '#fff';
+
+      clothingPanel.innerHTML = `
+        <h3 style="margin-top:0; border-bottom:2px solid #00ccff; padding-bottom:6px; color:#00ccff; text-align:center; font-size:20px;">👕 МАГАЗИН ОДЕЖДЫ</h3>
+        
+        <div style="margin-bottom:12px;">
+          <strong style="color:#00ccff; display:block; margin-bottom:4px;">👜 СУМКИ (Купи и экипируй!):</strong>
+          <button id="btn-buy-bag-adidas" style="width:100%; padding:10px; background:#00ccff; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between; border-radius:6px; font-family:monospace;">
+            <span>👜 Сумка Adidas (15кг)</span>
+            <span>$15.00</span>
+          </button>
+          <button id="btn-buy-backpack-tourist" style="width:100%; padding:10px; background:#7cfc00; border:none; color:#000; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; border-radius:6px; font-family:monospace;">
+            <span>🎒 Рюкзак туриста (30кг)</span>
+            <span>$45.00</span>
+          </button>
+        </div>
+
+        <div style="margin-bottom:12px; border-top:1px solid #333; padding-top:10px;">
+          <strong style="color:#ffd700; display:block; margin-bottom:4px;">👕 ЭКИПИРОВКА:</strong>
+          <button id="btn-buy-jacket" style="width:100%; padding:10px; background:#ffd700; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between; border-radius:6px; font-family:monospace;">
+            <span>👕 Свитшот Adidas (+реген)</span>
+            <span>$10.00</span>
+          </button>
+          <button id="btn-buy-sneakers" style="width:100%; padding:10px; background:#ff6b6b; border:none; color:#fff; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between; border-radius:6px; font-family:monospace;">
+            <span>👟 Кроссовки Nike (+скорость)</span>
+            <span>$20.00</span>
+          </button>
+          <button id="btn-buy-crown" style="width:100%; padding:10px; background:#ea00ff; border:none; color:#fff; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; border-radius:6px; font-family:monospace;">
+            <span>👑 Королевская Корона</span>
+            <span>$100.00</span>
+          </button>
+        </div>
+
+        <button id="btn-close-dashboard" style="width:100%; padding:10px; background:#333; border:1px solid #ff3333; color:#ff3333; font-weight:bold; cursor:pointer; border-radius:6px; font-family:monospace;">Закрыть</button>
+      `;
+
+      clothingPanel.querySelector('#btn-buy-bag-adidas')?.addEventListener('click', () => {
+        this.buyItemToInventory('bag-adidas', 15.00);
+      });
+      clothingPanel.querySelector('#btn-buy-backpack-tourist')?.addEventListener('click', () => {
+        this.buyItemToInventory('backpack-tourist', 45.00);
+      });
+      clothingPanel.querySelector('#btn-buy-jacket')?.addEventListener('click', () => {
+        this.buyClothingItem('jacket', 10.00);
+      });
+      clothingPanel.querySelector('#btn-buy-sneakers')?.addEventListener('click', () => {
+        this.buyClothingItem('sneakers', 20.00);
+      });
+      clothingPanel.querySelector('#btn-buy-crown')?.addEventListener('click', () => {
+        this.buyClothingItem('crown', 100.00);
+      });
+      clothingPanel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => {
+        this.toggleInventory(false);
+      });
+
+      dashboard.appendChild(clothingPanel);
     }
 
-    // 2. ПРАВАЯ ПАНЕЛЬ: Рюкзак (Инвентарь 3х4 слота) — всегда отображается!
+    // 2. ПРАВАЯ ПАНЕЛЬ: Рюкзак (Инвентарь 3х4 слота + специальный СЛОТ ПОД СУМКУ!)
     const inventoryPanel = document.createElement('div');
     inventoryPanel.id = 'dashboard-inventory-panel';
     inventoryPanel.style.background = 'rgba(15,15,15,0.92)';
@@ -984,14 +1050,25 @@ export class WorldScene extends Phaser.Scene {
         <span style="font-weight:bold; font-size:22px; color:#7cfc00; letter-spacing:1px;">🎒 МОЙ РЮКЗАК</span>
         <button id="btn-close-dashboard-x" style="background:none; border:none; color:#ff4444; font-weight:bold; cursor:pointer; font-size:24px;">[X]</button>
       </div>
+
+      <!-- Специальный блок СЛОТА ДЛЯ ЭКИПИРОВАНИЯ СУМКИ -->
+      <div style="display:flex; align-items:center; gap:16px; background:rgba(255,255,255,0.04); padding:10px; border-radius:8px; margin-bottom:16px; border:1px solid #555;">
+        <div id="equip-bag-slot" style="width:72px; height:72px; background:rgba(25,25,25,0.85); border:2px dashed #7cfc00; border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; image-rendering:pixelated;">
+          <!-- Сюда вставляется экипированная сумка -->
+        </div>
+        <div style="font-size:12px; line-height:1.4;">
+          <strong style="color:#7cfc00; display:block;">СЛОТ ДЛЯ СУМКИ</strong>
+          <span id="equip-bag-desc" style="color:#aaa;">Без сумки (доступно только 4 слота кармана)</span>
+        </div>
+      </div>
       
       <div id="inventory-grid" style="display:grid; grid-template-columns: repeat(4, 96px); grid-template-rows: repeat(3, 96px); gap: 12px; margin-bottom:16px;">
         <!-- Сюда вставляются слоты -->
       </div>
       
       <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px; color:#ccc;">
-        <span>Сдача бутылок кликом в автомате</span>
-        <span id="inv-weight-status">Вес: 0.0 / 8.0 кг</span>
+        <span id="inv-guide-text">Сдача бутылок кликом в автомате</span>
+        <span id="inv-weight-status">Вес: 0.0 / 2.5 кг</span>
       </div>
     `;
 
@@ -1001,21 +1078,170 @@ export class WorldScene extends Phaser.Scene {
 
     dashboard.appendChild(inventoryPanel);
 
-    // Отрисовываем сетку слотов в инвентаре
+    // Добавляем логику клика на слот экипировки для снятия сумки!
+    const equipSlot = inventoryPanel.querySelector('#equip-bag-slot') as HTMLDivElement;
+    equipSlot.addEventListener('click', () => {
+      this.unequipBag();
+    });
+
+    // Отрисовываем сетку слотов и обновляем слот экипировки
     this.updateInventoryUI();
+  }
+
+  /** Покупка расходников или сумок в инвентарь */
+  private buyItemToInventory(itemKey: string, cost: number): void {
+    if (this.localMoney < cost) {
+      this.showFloatingText('Недостаточно денег!', this.player.x, this.player.y - 30, '#ff3333');
+      return;
+    }
+
+    // Ищем свободное место в инвентаре (с учётом блокировки слотов!)
+    const activeSlotsCount = this.backpackTier === 1 ? 4 : this.backpackTier === 2 ? 8 : 12;
+    let freeSlotIdx = -1;
+    for (let i = 0; i < activeSlotsCount; i++) {
+      if (this.localInventory[i] === null) {
+        freeSlotIdx = i;
+        break;
+      }
+    }
+
+    if (freeSlotIdx === -1) {
+      this.showFloatingText('Инвентарь полон! Освободи слоты.', this.player.x, this.player.y - 30, '#ff3333');
+      return;
+    }
+
+    this.localMoney -= cost;
+    this.localInventory[freeSlotIdx] = itemKey as any; // Ложим вещь в слот как специальный предмет!
+    
+    // Звук монетки!
+    SoundEffects.playCoinSound();
+
+    this.updateHUDUI();
+    this.updateDashboard();
+    this.showFloatingText(`Куплено: ${itemKey === 'shawarma' ? 'Шаурма' : itemKey === 'energy' ? 'Ягуар' : 'Сумка'}!`, this.player.x, this.player.y - 30, '#7cfc00');
+  }
+
+  /** Покупка одежды в магазине одежды (одевается сразу!) */
+  private buyClothingItem(type: 'jacket' | 'sneakers' | 'crown', cost: number): void {
+    if (this.localMoney < cost) {
+      this.showFloatingText('Недостаточно денег!', this.player.x, this.player.y - 30, '#ff3333');
+      return;
+    }
+
+    if (type === 'jacket' && this.hasJacket) return;
+    if (type === 'sneakers' && this.hasSneakers) return;
+    if (type === 'crown' && this.hasCrown) return;
+
+    this.localMoney -= cost;
+    
+    if (type === 'jacket') {
+      this.hasJacket = true;
+      this.showFloatingText('Одета Куртка Adidas! Энергия копится на 50% быстрее!', this.player.x, this.player.y - 30, '#7cfc00');
+    } else if (type === 'sneakers') {
+      this.hasSneakers = true;
+      this.showFloatingText('Одеты Кроссовки Nike! Твоя скорость выросла на 30%!', this.player.x, this.player.y - 30, '#7cfc00');
+    } else if (type === 'crown') {
+      this.hasCrown = true;
+      this.player.setTint(0xffd700); // Окрашиваем персонажа золотом!
+      this.showFloatingText('Ты надел Золотую Корону! Король улиц!', this.player.x, this.player.y - 30, '#ffd700');
+    }
+
+    SoundEffects.playUpgradeSound();
+
+    this.updateHUDUI();
+    this.updateDashboard();
+  }
+
+  /** Экипировать сумку из инвентаря рюкзака */
+  private equipBagFromInventory(slotIdx: number, itemType: 'bag-adidas' | 'backpack-tourist'): void {
+    if (this.equippedBag) {
+      this.showFloatingText('Сначала сними старую сумку!', this.player.x, this.player.y - 30, '#ff9900');
+      return;
+    }
+
+    this.localInventory[slotIdx] = null;
+    this.equippedBag = itemType;
+    this.backpackTier = itemType === 'bag-adidas' ? 2 : 3;
+
+    // Шлем на сервер информацию об апгрейде тира рюкзака!
+    this.sendGameMessage({ type: 'upgrade-backpack', tier: this.backpackTier });
+
+    SoundEffects.playUpgradeSound();
+    this.updateHUDUI();
+    this.updateDashboard();
+
+    this.showFloatingText(`Экипировано: ${itemType === 'bag-adidas' ? 'Сумка Adidas (15кг)' : 'Рюкзак туриста (30кг)'}!`, this.player.x, this.player.y - 30, '#7cfc00');
+  }
+
+  /** Снять сумку */
+  private unequipBag(): void {
+    if (!this.equippedBag) return;
+
+    // Проверяем, есть ли свободный слот в инвентаре для снятой сумки (среди первых 4 слотов, которые останутся!)
+    let freeSlotIdx = -1;
+    for (let i = 0; i < 4; i++) {
+      if (this.localInventory[i] === null) {
+        freeSlotIdx = i;
+        break;
+      }
+    }
+
+    if (freeSlotIdx === -1) {
+      this.showFloatingText('Освободи карманы (первые 4 слота), чтобы снять сумку!', this.player.x, this.player.y - 30, '#ff3333');
+      return;
+    }
+
+    // Проверяем вес (снятие сумки сбрасывает вес до лимита 2.5кг)
+    if (this.currentWeight > 2.5) {
+      this.showFloatingText('Разгрузи рюкзак до 2.5кг, чтобы снять сумку!', this.player.x, this.player.y - 30, '#ff3333');
+      return;
+    }
+
+    const removedBag = this.equippedBag;
+    this.equippedBag = null;
+    this.backpackTier = 1;
+    this.localInventory[freeSlotIdx] = removedBag as any;
+
+    this.sendGameMessage({ type: 'upgrade-backpack', tier: 1 });
+
+    SoundEffects.playUpgradeSound();
+    this.updateHUDUI();
+    this.updateDashboard();
+
+    this.showFloatingText('Сумка снята и убрана в карман!', this.player.x, this.player.y - 30, '#ff9900');
+  }
+
+  /** Использование еды прямо из слота инвентаря */
+  private useFoodFromInventory(slotIdx: number, itemType: 'shawarma' | 'energy'): void {
+    this.localInventory[slotIdx] = null;
+
+    if (itemType === 'shawarma') {
+      this.stamina = 100.0;
+      this.isExhausted = false;
+      this.shawarmaBuffTimer = 20.0; // 20 сек бесконечного спринта!
+      SoundEffects.playEatSound();
+      this.showFloatingText('Ты съел сытную шаурму! Выносливость восстановлена на 100%!', this.player.x, this.player.y - 30, '#ffd700');
+    } else if (itemType === 'energy') {
+      this.energyDrinkBuffTimer = 30.0; // 30 сек бешеного бега!
+      SoundEffects.playDrinkSound();
+      this.showFloatingText('Выпит Ягуар! Ты получил заряд бешеной скорости!', this.player.x, this.player.y - 30, '#ffd700');
+    }
+
+    this.updateHUDUI();
+    this.updateDashboard();
   }
 
   private updateHUDUI(): void {
     if (!this.hudOverlayEl) return;
 
-    const maxLimit = this.backpackTier === 1 ? 8.0 : this.backpackTier === 2 ? 15.0 : 30.0;
-    const bagName = this.backpackTier === 1 ? 'Пакет' : this.backpackTier === 2 ? 'Сумка Adidas' : 'Рюкзак';
+    const maxLimit = this.backpackTier === 1 ? 2.5 : this.backpackTier === 2 ? 15.0 : 30.0;
+    const bagName = this.backpackTier === 1 ? 'Карманы' : this.backpackTier === 2 ? 'Сумка Adidas' : 'Рюкзак';
 
     const moneyVal = this.hudOverlayEl.querySelector('#hud-money-val');
     if (moneyVal) moneyVal.textContent = this.localMoney.toFixed(2);
 
     const weightEl = this.hudOverlayEl.querySelector('#hud-weight');
-    if (weightEl) weightEl.innerHTML = `Сумка: <strong style="color:#fff;">${bagName}</strong> (${this.currentWeight.toFixed(1)} / ${maxLimit} кг)`;
+    if (weightEl) weightEl.innerHTML = `🎒 ${bagName} (${this.currentWeight.toFixed(1)} / ${maxLimit} кг)`;
 
     const weightBar = this.hudOverlayEl.querySelector('#hud-weight-bar') as HTMLDivElement;
     if (weightBar) {
@@ -1049,20 +1275,53 @@ export class WorldScene extends Phaser.Scene {
 
     grid.innerHTML = '';
 
+    // Обновляем отображение слота экипировки сумки!
+    const equipSlot = this.dashboardPanelEl.querySelector('#equip-bag-slot') as HTMLDivElement;
+    const equipDesc = this.dashboardPanelEl.querySelector('#equip-bag-desc') as HTMLSpanElement;
+
+    if (this.equippedBag) {
+      const bagPath = `/assets/props/flat/bags/${this.equippedBag}.webp`;
+      equipSlot.innerHTML = `<img src="${bagPath}" style="max-width:54px; max-height:54px; object-fit:contain;" />`;
+      equipSlot.style.borderColor = '#7cfc00';
+      equipSlot.style.background = 'rgba(124,252,0,0.12)';
+      equipDesc.innerHTML = `<strong style="color:#7cfc00;">${this.equippedBag === 'bag-adidas' ? 'Сумка Adidas (15кг)' : 'Рюкзак туриста (30кг)'}</strong><br/><span style="color:#ccc; font-size:11px;">Кликни, чтобы снять в карман</span>`;
+    } else {
+      equipSlot.innerHTML = `<span style="font-size:18px; color:#444;">➕</span>`;
+      equipSlot.style.borderColor = '#ff3333';
+      equipSlot.style.background = 'rgba(25,25,25,0.85)';
+      equipDesc.innerHTML = `<strong style="color:#ff3333;">Без сумки</strong><br/><span style="color:#aaa; font-size:11px;">Доступно только 4 кармана слота</span>`;
+    }
+
+    // Рендерим 12 слотов
+    const activeSlotsCount = this.backpackTier === 1 ? 4 : this.backpackTier === 2 ? 8 : 12;
+
     for (let i = 0; i < INVENTORY_SLOTS; i++) {
       const item = this.localInventory[i];
       const slot = document.createElement('div');
       
       slot.style.width = '94px';
       slot.style.height = '94px';
-      slot.style.background = 'rgba(25,25,25,0.85)';
-      slot.style.border = '2px solid #444';
-      slot.style.boxShadow = 'inset 0 4px 10px rgba(0,0,0,0.6)';
       slot.style.borderRadius = '8px';
       slot.style.display = 'flex';
       slot.style.alignItems = 'center';
       slot.style.justifyContent = 'center';
       slot.style.position = 'relative';
+
+      // Если слот ЗАБЛОКИРОВАН (потому что нет рюкзака подходящего уровня!)
+      if (i >= activeSlotsCount) {
+        slot.style.background = 'rgba(15,15,15,0.92)';
+        slot.style.border = '2px solid #333';
+        slot.style.boxShadow = 'none';
+        slot.style.cursor = 'default';
+        slot.innerHTML = `<span style="font-size:18px; opacity:0.35;">🔒</span>`;
+        grid.appendChild(slot);
+        continue;
+      }
+
+      // Свободный или заполненный активный слот
+      slot.style.background = 'rgba(25,25,25,0.85)';
+      slot.style.border = '2px solid #444';
+      slot.style.boxShadow = 'inset 0 4px 10px rgba(0,0,0,0.6)';
       slot.style.cursor = item ? 'pointer' : 'default';
 
       if (item) {
@@ -1070,21 +1329,40 @@ export class WorldScene extends Phaser.Scene {
         slot.style.background = 'rgba(124,252,0,0.06)';
         slot.style.boxShadow = 'none';
 
-        const def = BOTTLE_TYPES[item];
-        const webpPath = `/assets/props/flat/bottles/${item}.webp`;
+        // Определяем спрайты предметов (Сумки, Еда, Бутылки)
+        let webpPath = `/assets/props/flat/bottles/${item}.webp`; // по умолчанию бутылка
+        let isSpecialItem = false;
+        let isFoodItem = false;
+
+        if (item === 'bag-adidas' || item === 'backpack-tourist') {
+          webpPath = `/assets/props/flat/bags/${item}.webp`;
+          isSpecialItem = true;
+        } else if (item === 'shawarma' || item === 'energy') {
+          webpPath = `/assets/props/flat/food/${item}.webp`;
+          isFoodItem = true;
+        }
 
         slot.innerHTML = `
           <img src="${webpPath}" style="max-width:64px; max-height:68px; object-fit:contain;" />
-          <div style="position:absolute; right:8px; bottom:8px; font-size:12px; color:#fff; background:#000000aa; padding:2px 5px; border-radius:2px; font-family: monospace;">
-            ${def.weight}кг
-          </div>
+          ${!isSpecialItem && !isFoodItem ? `<div style="position:absolute; right:8px; bottom:8px; font-size:12px; color:#fff; background:#000000aa; padding:2px 5px; border-radius:2px; font-family: monospace;">${BOTTLE_TYPES[item as BottleType]?.weight || 1.0}кг</div>` : ''}
+          ${isSpecialItem ? `<div style="position:absolute; right:8px; bottom:8px; font-size:10px; color:#ffd700; background:#000000cc; padding:2px 5px; border-radius:2px;">СУМКА</div>` : ''}
+          ${isFoodItem ? `<div style="position:absolute; right:8px; bottom:8px; font-size:10px; color:#ff9900; background:#000000cc; padding:2px 5px; border-radius:2px;">ЕДА</div>` : ''}
         `;
 
         slot.addEventListener('click', () => {
-          if (this.nearKioskId) {
-            this.sendGameMessage({ type: 'sell-slot', slotIndex: i });
+          if (isSpecialItem) {
+            // Экипируем сумку из инвентаря!
+            this.equipBagFromInventory(i, item as any);
+          } else if (isFoodItem) {
+            // Едим/пьем еду из инвентаря!
+            this.useFoodFromInventory(i, item as any);
           } else {
-            this.showFloatingText('Используй автомат, чтобы сдать!', this.player.x, this.player.y - 30, '#ff9900');
+            // Сдаем бутылку в автомат (если игрок рядом с киоском!)
+            if (this.nearKioskId) {
+              this.sendGameMessage({ type: 'sell-slot', slotIndex: i });
+            } else {
+              this.showFloatingText('Используй автомат, чтобы сдать!', this.player.x, this.player.y - 20, '#ff9900');
+            }
           }
         });
       } else {
@@ -1094,10 +1372,19 @@ export class WorldScene extends Phaser.Scene {
       grid.appendChild(slot);
     }
 
-    const maxLimit = this.backpackTier === 1 ? 8.0 : this.backpackTier === 2 ? 15.0 : 30.0;
+    const maxLimit = this.backpackTier === 1 ? 2.5 : this.backpackTier === 2 ? 15.0 : 30.0;
     const weightStatus = this.dashboardPanelEl.querySelector('#inv-weight-status');
     if (weightStatus) {
       weightStatus.textContent = `Вес: ${this.currentWeight.toFixed(1)} / ${maxLimit} кг`;
+    }
+
+    const guideText = this.dashboardPanelEl.querySelector('#inv-guide-text') as HTMLSpanElement;
+    if (guideText) {
+      if (this.nearKioskId) {
+        guideText.textContent = 'Кликни на бутылку, чтобы сдать!';
+      } else {
+        guideText.textContent = 'Кликни на Еду, чтобы использовать';
+      }
     }
   }
 
@@ -1127,20 +1414,60 @@ export class WorldScene extends Phaser.Scene {
     return typeof p.id === 'string' && typeof p.x === 'number' && typeof p.y === 'number';
   }
 
+  private spawnBottleClient(b: ServerBottle): void {
+    if (this.bottlesMap.has(b.id)) return;
+
+    const def = BOTTLE_TYPES[b.type];
+    if (!def) return;
+
+    // Спрайты бутылок уменьшены на 50% (scale 0.42!)
+    const img = this.add.image(b.x, b.y, def.spriteKey);
+    img.setScale(0.42);
+    img.setDepth(100);
+
+    this.tweens.add({
+      targets: img,
+      y: b.y - 4,
+      duration: 1200 + Math.random() * 400,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+
+    this.bottlesMap.set(b.id, img);
+  }
+
+  private removeBottleClient(id: string): void {
+    const img = this.bottlesMap.get(id);
+    if (img) {
+      this.tweens.add({
+        targets: img,
+        scale: 0.05,
+        alpha: 0,
+        angle: 180,
+        duration: 200,
+        onComplete: () => {
+          img.destroy();
+        }
+      });
+      this.bottlesMap.delete(id);
+    }
+  }
+
   private showFloatingText(text: string, x: number, y: number, color = '#7cfc00'): void {
     const ftext = this.add.text(x, y, text, {
       fontFamily: 'monospace',
-      fontSize: '13px',
+      fontSize: '11px',
       color,
       backgroundColor: '#000000dd',
-      padding: { x: 6, y: 3 }
+      padding: { x: 5, y: 3 }
     });
     ftext.setOrigin(0.5);
     ftext.setDepth(2000);
 
     this.tweens.add({
       targets: ftext,
-      y: y - 50,
+      y: y - 30,
       alpha: 0,
       duration: 1600,
       onComplete: () => ftext.destroy()
@@ -1151,7 +1478,7 @@ export class WorldScene extends Phaser.Scene {
     let rect = this.remotePlayers.get(id);
     if (!rect) {
       rect = this.add.sprite(x, y, 'player-sprites', 0);
-      rect.setScale(0.85);
+      rect.setScale(0.42); // Уменьшено на 50%!
       rect.setTint(REMOTE_TINT);
       rect.setDepth(500);
       this.remotePlayers.set(id, rect);

@@ -24,7 +24,7 @@ export type CellPos = { x: number; y: number };
 
 export interface MapEntity {
   id: string; // Уникальный ID объекта
-  type: 'kiosk' | 'spawner' | 'npc' | 'building' | 'apartment-1' | 'apartment-2' | 'wall' | 'food-cart';
+  type: 'kiosk' | 'spawner' | 'npc' | 'building' | 'apartment-1' | 'apartment-2' | 'wall' | 'food-cart' | 'clothing-shop';
   cellX: number;
   cellY: number;
   rotation: number; // 0, 90, 180, 270

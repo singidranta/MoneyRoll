@@ -37,11 +37,21 @@ export class PreloadScene extends Phaser.Scene {
     this.load.spritesheet('player-sprites', '/assets/chars/player-spritesheet.webp', { frameWidth: 128, frameHeight: 128 });
     this.load.image('icon-coin', '/assets/icons/coin.webp');
 
-    // Квартиры, стены и ларёк с шаурмой
+    // Квартиры, стены, ларёк с шаурмой и магазин одежды
     this.load.image('apartment-1', '/assets/props/flat/buildings/apartment-1.webp');
     this.load.image('apartment-2', '/assets/props/flat/buildings/apartment-2.webp');
+    this.load.image('clothing-shop', '/assets/props/flat/buildings/clothing-shop.webp');
     this.load.image('wall', '/assets/props/flat/walls/wall.webp');
     this.load.image('food-cart', '/assets/props/flat/kiosk/food-cart.webp');
+
+    // Текстуры еды, сумок и одежды для инвентаря
+    this.load.image('item-bag-adidas', '/assets/props/flat/bags/bag-adidas.webp');
+    this.load.image('item-backpack-tourist', '/assets/props/flat/bags/backpack-tourist.webp');
+    this.load.image('item-shawarma', '/assets/props/flat/food/shawarma.webp');
+    this.load.image('item-energy-drink', '/assets/props/flat/food/energy-drink.webp');
+    this.load.image('item-adidas-jacket', '/assets/props/flat/clothing/adidas-jacket.webp');
+    this.load.image('item-sneakers', '/assets/props/flat/clothing/sneakers.webp');
+    this.load.image('item-crown', '/assets/props/flat/clothing/crown.webp');
   }
 
   create(): void {

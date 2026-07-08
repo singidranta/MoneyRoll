@@ -24,7 +24,7 @@ export class EditorScene extends Phaser.Scene {
   // Выбранные инструменты
   private currentTool: 'tile' | 'entity' | 'eraser' = 'tile';
   private selectedTileType: TileType = 'ground-grass';
-  private selectedEntityType: 'kiosk' | 'spawner' | 'npc' | 'building' | 'apartment-1' | 'apartment-2' | 'wall' | 'food-cart' = 'kiosk';
+  private selectedEntityType: 'kiosk' | 'spawner' | 'npc' | 'building' | 'apartment-1' | 'apartment-2' | 'wall' | 'food-cart' | 'clothing-shop' = 'kiosk';
   private currentRotation = 0; // 0, 90, 180, 270
 
   // Спрайты
@@ -227,6 +227,12 @@ export class EditorScene extends Phaser.Scene {
       this.entitySpritesMap.set(key, img);
     } else if (entity.type === 'food-cart') {
       const img = this.add.image(px, py, 'food-cart');
+      img.setScale(1.0);
+      img.setAngle(entity.rotation);
+      img.setDepth(100);
+      this.entitySpritesMap.set(key, img);
+    } else if (entity.type === 'clothing-shop') {
+      const img = this.add.image(px, py, 'clothing-shop');
       img.setScale(1.0);
       img.setAngle(entity.rotation);
       img.setDepth(100);
@@ -478,6 +484,8 @@ export class EditorScene extends Phaser.Scene {
         spriteKey = 'recycle-machine';
       } else if (this.selectedEntityType === 'food-cart') {
         spriteKey = 'food-cart';
+      } else if (this.selectedEntityType === 'clothing-shop') {
+        spriteKey = 'clothing-shop';
       } else if (this.selectedEntityType === 'apartment-1') {
         spriteKey = 'apartment-1';
       } else if (this.selectedEntityType === 'apartment-2') {
@@ -594,6 +602,7 @@ export class EditorScene extends Phaser.Scene {
           <option value="kiosk">Recycle Kiosk (Автомат)</option>
           <option value="spawner">Bottle Spawner (Спавнер)</option>
           <option value="food-cart">Ларёк с Шаурмой (Магазин)</option>
+          <option value="clothing-shop">Магазин одежды (Гардероб)</option>
           <option value="apartment-1">Кирпичный дом (Квартира 1)</option>
           <option value="apartment-2">Панельный дом (Квартира 2)</option>
           <option value="wall">Забор/Стена (Препятствие)</option>
