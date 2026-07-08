@@ -4,18 +4,42 @@
  */
 
 export const MAP_VERSION = 1;
-export const MAP_WIDTH = 200;
-export const MAP_HEIGHT = 200;
-export const TILE_SIZE = 64;
-export const TILE_TYPES = ['ground', 'road'] as const;
+export const MAP_WIDTH = 10; // Карта мира 10х10 клеток
+export const MAP_HEIGHT = 10;
+export const TILE_SIZE = 128; // Тайлы 128х128 пикселей
+
+export const TILE_TYPES = [
+  'ground-grass',
+  'ground-sand',
+  'ground-dirt',
+  'road-straight',
+  'road-corner',
+  'road-t-junction',
+  'road-crossroad'
+] as const;
 
 export type TileType = (typeof TILE_TYPES)[number];
 
 export type CellPos = { x: number; y: number };
 
+export interface MapEntity {
+  id: string; // Уникальный ID объекта
+  type: 'kiosk' | 'spawner' | 'npc' | 'building' | 'apartment-1' | 'apartment-2' | 'wall' | 'food-cart';
+  cellX: number;
+  cellY: number;
+  rotation: number; // 0, 90, 180, 270
+  properties: {
+    spawnInterval?: number; // Интервал появления (сек)
+    maxBottles?: number; // Максимум бутылок
+    spawnRadius?: number; // Радиус спавна бутылок (в клетках)
+    spriteKey?: string; // Кастомный спрайт (для зданий/NPC)
+    label?: string; // Описание/Имя
+  };
+}
+
 /**
  * Хранилище карты: разреженный словарь. Ключ — "x,y".
- * Сейчас {ground, road} — потом добавим здания, NPC и т.д.
+ * Поддерживает вращение в градусах (0, 90, 180, 270) и объекты entities.
  */
 export type MapDocument = {
   version: number;
@@ -23,6 +47,8 @@ export type MapDocument = {
   height: number;
   tileSize: number;
   tiles: Record<string, TileType>;
+  rotations?: Record<string, number>; // вращение тайлов
+  entities?: Record<string, MapEntity>; // Объекты привязанные к клеткам. Ключ - cellKey(x,y)
 };
 
 export function cellKey(x: number, y: number): string {
@@ -45,11 +71,18 @@ export function emptyMap(): MapDocument {
     height: MAP_HEIGHT,
     tileSize: TILE_SIZE,
     tiles: {},
+    rotations: {},
+    entities: {},
   };
 }
 
 /** Цикл "следующий тип" при клике в редакторе. */
 export const NEXT_TILE: Record<TileType, TileType> = {
-  ground: 'road',
-  road: 'ground',
+  'ground-grass': 'ground-sand',
+  'ground-sand': 'ground-dirt',
+  'ground-dirt': 'road-straight',
+  'road-straight': 'road-corner',
+  'road-corner': 'road-t-junction',
+  'road-t-junction': 'road-crossroad',
+  'road-crossroad': 'ground-grass',
 };

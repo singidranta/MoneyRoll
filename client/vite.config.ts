@@ -10,13 +10,13 @@ export default defineConfig({
     proxy: {
       // WebSocket-прокси на сервер (нужно для неткода)
       '/ws': {
-        target: 'ws://localhost:3000',
+        target: 'ws://127.0.0.1:3000',
         ws: true,
         changeOrigin: true,
       },
       // REST-прокси для /api/map и /api/network
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
     },
