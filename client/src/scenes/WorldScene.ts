@@ -136,8 +136,8 @@ export class WorldScene extends Phaser.Scene {
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setCollideWorldBounds(true);
     // Профессиональный хитбокс у ног персонажа (для красивой глубины и легкого обхода углов!)
-    body.setSize(36, 24);
-    body.setOffset(46, 100);
+    body.setSize(48, 48);
+    body.setOffset(40, 80);
 
     // Инициализируем статическую группу для физических коллизий (Стены, Квартиры)
     this.obstaclesGroup = this.physics.add.staticGroup();
@@ -322,22 +322,9 @@ export class WorldScene extends Phaser.Scene {
         
         const oBody = obstacle.body as Phaser.Physics.Arcade.StaticBody;
 
-        if (entity.type === 'wall') {
-          // Тонкая стена-забор: хитбокс зависит от угла поворота!
-          if (entity.rotation === 90 || entity.rotation === 270) {
-            // Вертикальный забор
-            oBody.setSize(32, 128);
-            oBody.setOffset(48, 0);
-          } else {
-            // Горизонтальный забор
-            oBody.setSize(128, 32);
-            oBody.setOffset(0, 48);
-          }
-        } else {
-          // Квартиры / здания: сочный хитбокс, позволяющий игроку заходить слегка за крышу здания
-          oBody.setSize(116, 110);
-          oBody.setOffset(6, 18);
-        }
+        // Строгая и стабильная коллизия по размеру сетки (128x128) — полностью исключает любые баги и невидимые стены!
+        oBody.setSize(128, 128);
+        oBody.setOffset(0, 0);
 
         obstacle.refreshBody(); // Обновляем физическое тело статического объекта
       } else if (entity.type === 'npc') {
