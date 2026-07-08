@@ -275,20 +275,23 @@ export class WorldScene extends Phaser.Scene {
 
         this.kiosksSpritesMap.set(entity.id, kioskSprite);
       } else if (entity.type === 'apartment-1' || entity.type === 'apartment-2' || entity.type === 'wall' || entity.type === 'building') {
-        // Твердые препятствия (Квартиры, Стены) — добавляем их в физическую группу статических препятствий!
+        // Твердые препятствия (Квартиры, Стены) — создаем вручную и добавляем статические тела
         const spriteKey = entity.type;
-        const obstacle = this.obstaclesGroup.create(px, py, spriteKey);
+        const obstacle = this.add.image(px, py, spriteKey);
         obstacle.setScale(1.0);
         obstacle.setAngle(entity.rotation);
         obstacle.setDepth(90);
         
+        // Вручную подключаем статическую физику к созданному спрайту
+        this.physics.add.existing(obstacle, true); // true = static!
         const oBody = obstacle.body as Phaser.Physics.Arcade.StaticBody;
 
         // Строгая и стабильная коллизия по размеру сетки (128x128) — полностью исключает любые баги и невидимые стены!
         oBody.setSize(128, 128);
         oBody.setOffset(0, 0);
+        oBody.updateFromGameObject(); // Синхронизируем тело с положением спрайта
 
-        obstacle.refreshBody(); // Обновляем физическое тело статического объекта
+        this.obstaclesGroup.add(obstacle);
       } else if (entity.type === 'npc') {
         const npcContainer = this.add.container(px, py);
         npcContainer.setDepth(101);
