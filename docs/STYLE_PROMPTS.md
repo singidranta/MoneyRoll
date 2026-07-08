@@ -138,9 +138,23 @@ game UI icon style, [ICON SUBJECT HERE]
 
 ---
 
-## Постобработка ассетов
+## Постобработка ассетов и Секрет идеального вырезания (Chroma Key Green!)
 
-1. **Удалить фон** через `rembg` или [remove.bg](https://remove.bg)
+> 💡 **ГЕНИАЛЬНЫЙ ЛАЙФХАК ПРОЕКТА:**
+> Нейросети (SDXL, Midjourney) не умеют генерировать честный прозрачный альфа-канал из коробки. Промпты вида `transparent background` часто приводят к появлению шахматной доски, уродливой белой каемки или грязных серых теней вокруг объектов.
+> 
+> Намного эффективнее — генерировать ассеты на **сплошном ядовито-зелёном фоне (Chroma Key Green)**!
+> 
+> **База промпта для хромакея:**
+> Добавляй в конец промпта: `, isolated on solid flat lime green background, chroma key green background`
+> А в Negative prompt добавляй: `, gradient background, chessboard transparency, shadow on background`
+> 
+> **Как мгновенно вырезать такой фон через ImageMagick:**
+> ```bash
+> convert input.png -fuzz 15% -transparent "#00ff00" output.png
+> ```
+
+1. **Удалить фон** через `rembg`, [remove.bg](https://remove.bg) или ImageMagick Chroma Key (см. лайфхак выше).
 2. **Ресайз** сохраняя пропорции:
    - Персонажи: 128×128 (для paper-doll слоёв ниже 256×256)
    - Бутылки: 64×64
