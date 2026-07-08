@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import { connectNetcode, type NetcodeClient, type NetcodeMessage } from '../systems/Netcode';
+import { TILE_COLORS } from '../systems/MapSystem';
+import { TILE_SIZE, type MapDocument } from '../../../shared/map';
 
 const MAP_PIXEL_W = 12800;   // 200 * 64
 const MAP_PIXEL_H = 12800;
@@ -29,6 +31,8 @@ export class WorldScene extends Phaser.Scene {
   private myId: string | null = null;
   private remotePlayers = new Map<string, Phaser.GameObjects.Rectangle>();
   private snapshotBuffer: SnapshotEntry[] = [];
+  private mapTiles!: Phaser.GameObjects.Graphics;
+  private mapJson: MapDocument | null = null;
 
   constructor() {
     super({ key: 'World' });
@@ -77,6 +81,9 @@ export class WorldScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#0a0a0a');
     this.cameras.main.setBounds(0, 0, MAP_PIXEL_W, MAP_PIXEL_H);
 
+    // Кастомный курсор — крестик для попадания в клетки
+    this.input.setDefaultCursor('crosshair');
+
     this.netcode = connectNetcode((msg) => this.handleServerMessage(msg));
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -84,6 +91,7 @@ export class WorldScene extends Phaser.Scene {
     });
 
     void this.loadNetwork();
+    void this.loadMap();
 
     console.log('[MoneyRoll] World ready. WASD / стрелки — движение.');
   }
@@ -118,6 +126,36 @@ export class WorldScene extends Phaser.Scene {
     console.log('%c[MoneyRoll] Share URLs for friends:', 'color:#aaccff;font-weight:bold');
     for (const { iface, ip } of info.ips) {
       console.log(`  http://${ip}:${info.port}  (${iface})`);
+    }
+  }
+
+  // ───── Map (редакторская map.json) ─────
+
+  /** Загрузка map.json и рендер тайлов под игроком. */
+  private async loadMap(): Promise<void> {
+    try {
+      const res = await fetch('/api/map');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      this.mapJson = (await res.json()) as MapDocument;
+      console.log(`[MoneyRoll][world] map loaded: ${Object.keys(this.mapJson.tiles).length} tiles`);
+      this.renderMap();
+    } catch (err) {
+      console.warn('[MoneyRoll][world] failed to load map:', err);
+    }
+  }
+
+  /** Рисует поставленные тайлы в один Graphics-меш (быстро). */
+  private renderMap(): void {
+    if (this.mapTiles) this.mapTiles.destroy();
+    this.mapTiles = this.add.graphics();
+    this.mapTiles.setDepth(-2); // под игроком, поверх серой сетки фона
+    for (const [key, type] of Object.entries(this.mapJson?.tiles ?? {})) {
+      const [xs, ys] = key.split(',');
+      const x = Number(xs);
+      const y = Number(ys);
+      if (!Number.isInteger(x) || !Number.isInteger(y)) continue;
+      this.mapTiles.fillStyle(TILE_COLORS[type], 1);
+      this.mapTiles.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
     }
   }
 

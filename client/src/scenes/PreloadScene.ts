@@ -1,5 +1,13 @@
 import Phaser from 'phaser';
 
+function isEditorMode(): boolean {
+  try {
+    return new URL(window.location.href).searchParams.get('mode') === 'editor';
+  } catch {
+    return false;
+  }
+}
+
 export class PreloadScene extends Phaser.Scene {
   constructor() {
     super({ key: 'Preload' });
@@ -12,6 +20,8 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.scene.start('World');
+    const next = isEditorMode() ? 'Editor' : 'World';
+    console.log(`[MoneyRoll] Preload → ${next}`);
+    this.scene.start(next);
   }
 }
