@@ -22,6 +22,7 @@ export interface MapEntity {
   properties: {
     spawnInterval?: number; // Интервал появления (сек)
     maxBottles?: number; // Максимум бутылок
+    spawnRadius?: number; // Радиус спавна бутылок (в клетках)
     spriteKey?: string; // Кастомный спрайт (для зданий/NPC)
     label?: string; // Описание/Имя
   };
