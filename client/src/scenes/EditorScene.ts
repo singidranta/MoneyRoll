@@ -23,7 +23,7 @@ export class EditorScene extends Phaser.Scene {
   
   // Выбранные инструменты
   private currentTool: 'tile' | 'entity' | 'eraser' = 'tile';
-  private selectedTileType: TileType = 'ground';
+  private selectedTileType: TileType = 'ground-grass';
   private selectedEntityType: 'kiosk' | 'spawner' | 'npc' | 'building' = 'kiosk';
   private currentRotation = 0; // 0, 90, 180, 270
 
@@ -190,10 +190,10 @@ export class EditorScene extends Phaser.Scene {
     for (let x = 0; x < MAP_WIDTH; x++) {
       for (let y = 0; y < MAP_HEIGHT; y++) {
         const key = cellKey(x, y);
-        const type = this.mapJson.tiles[key] ?? 'ground';
+        const type = this.mapJson.tiles[key] ?? 'ground-grass';
         const rot = this.mapJson.rotations?.[key] ?? 0;
 
-        const spriteKey = type === 'road' ? 'tile-road' : 'tile-ground';
+        const spriteKey = 'tile-' + type;
         const px = x * TILE_SIZE + TILE_SIZE / 2;
         const py = y * TILE_SIZE + TILE_SIZE / 2;
 
@@ -344,7 +344,7 @@ export class EditorScene extends Phaser.Scene {
       this.mapJson.rotations[key] = this.currentRotation;
 
       // Визуальное обновление тайла
-      const spriteKey = this.selectedTileType === 'road' ? 'tile-road' : 'tile-ground';
+      const spriteKey = 'tile-' + this.selectedTileType;
       const existingImg = this.tileImagesMap.get(key);
       if (existingImg) {
         existingImg.setTexture(spriteKey);
@@ -408,10 +408,10 @@ export class EditorScene extends Phaser.Scene {
 
     // Если ластик, также очищаем тайл (делаем его травой по дефолту)
     if (this.currentTool === 'eraser') {
-      this.mapJson.tiles[key] = 'ground';
+      this.mapJson.tiles[key] = 'ground-grass';
       const tileImg = this.tileImagesMap.get(key);
       if (tileImg) {
-        tileImg.setTexture('tile-ground');
+        tileImg.setTexture('tile-ground-grass');
         tileImg.setAngle(0);
       }
     }
@@ -445,10 +445,10 @@ export class EditorScene extends Phaser.Scene {
     const px = cellX * TILE_SIZE + TILE_SIZE / 2;
     const py = cellY * TILE_SIZE + TILE_SIZE / 2;
 
-    let spriteKey = 'tile-ground';
+    let spriteKey = 'tile-ground-grass';
     
     if (this.currentTool === 'tile') {
-      spriteKey = this.selectedTileType === 'road' ? 'tile-road' : 'tile-ground';
+      spriteKey = 'tile-' + this.selectedTileType;
     } else if (this.currentTool === 'entity') {
       if (this.selectedEntityType === 'kiosk') {
         spriteKey = 'recycle-machine';
@@ -456,7 +456,7 @@ export class EditorScene extends Phaser.Scene {
         spriteKey = 'bottle-water'; // иконка спавнера в ghost
       }
     } else {
-      spriteKey = 'tile-ground'; // ластик
+      spriteKey = 'tile-ground-grass'; // ластик
     }
 
     if (!this.ghost) {
@@ -543,8 +543,13 @@ export class EditorScene extends Phaser.Scene {
       <div id="tile-tool-options" style="margin-bottom:15px; background:rgba(255,255,255,0.05); padding:8px; border-radius:4px;">
         <strong style="color:#ffd700; display:block; margin-bottom:4px;">ТИП ТАЙЛА:</strong>
         <select id="editor-tile-select" style="width:100%; background:#222; color:#fff; border:1px solid #ff6b6b; padding:5px; border-radius:4px; cursor:pointer;">
-          <option value="ground">Трава (Ground)</option>
-          <option value="road">Асфальт (Road)</option>
+          <option value="ground-grass">Трава (Ground Grass)</option>
+          <option value="ground-sand">Песок (Ground Sand)</option>
+          <option value="ground-dirt">Грязь (Ground Dirt)</option>
+          <option value="road-straight">Прямая дорога (Road Straight)</option>
+          <option value="road-corner">Поворот дороги (Road Corner)</option>
+          <option value="road-t-junction">Т-образный перекресток (Road T)</option>
+          <option value="road-crossroad">4-сторонний перекресток (Road Cross)</option>
         </select>
       </div>
 

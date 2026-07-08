@@ -9,8 +9,7 @@ const MAP_PIXEL_H = MAP_HEIGHT * TILE_SIZE;
 const MOVE_SPEED = 240;
 const SEND_INTERVAL_MS = 50;
 const SNAPSHOT_INTERP_DELAY_MS = 100;
-const REMOTE_TINT = 0xff6b6b;
-const REMOTE_BORDER = 0xaaffff;
+const REMOTE_TINT = 0xffaacc; // Розовый оттенок для других игроков
 const DEFAULT_SPAWN = { x: 400, y: 300 };
 
 type PeerSnapshot = { id: string; x: number; y: number };
@@ -22,7 +21,7 @@ type SnapshotEntry = {
 type NetInfo = { ips: Array<{ iface: string; ip: string }>; port: number };
 
 export class WorldScene extends Phaser.Scene {
-  private player!: Phaser.GameObjects.Rectangle;
+  private player!: Phaser.GameObjects.Image; // Персонаж теперь КАРТИНКА, а не квадрат!
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<string, Phaser.Input.Keyboard.Key>;
   private keyE!: Phaser.Input.Keyboard.Key;
@@ -33,7 +32,7 @@ export class WorldScene extends Phaser.Scene {
   private networkPanel!: Phaser.GameObjects.Text;
   private lastSentAt = 0;
   private myId: string | null = null;
-  private remotePlayers = new Map<string, Phaser.GameObjects.Rectangle>();
+  private remotePlayers = new Map<string, Phaser.GameObjects.Image>(); // Другие игроки тоже картинки!
   private snapshotBuffer: SnapshotEntry[] = [];
 
   // Игровая логика и сущности
@@ -48,6 +47,7 @@ export class WorldScene extends Phaser.Scene {
   private kiosksSpritesMap = new Map<string, Phaser.GameObjects.GameObject>();
   private npcSpritesList: Phaser.GameObjects.GameObject[] = [];
   private buildingSpritesList: Phaser.GameObjects.GameObject[] = [];
+  private staticTileImages: Phaser.GameObjects.Image[] = [];
 
   // Неткод-фишка: симуляция пинга
   private simulatedLagMs = 0;
@@ -75,19 +75,19 @@ export class WorldScene extends Phaser.Scene {
     this.keyI = kb.addKey(Phaser.Input.Keyboard.KeyCodes.I);
     this.keyTab = kb.addKey(Phaser.Input.Keyboard.KeyCodes.TAB);
 
-    // Фоновая трава по всей карте 30х30
+    // Фоновая трава по всей карте 30х30 в качестве основы
     this.groundTileSprite = this.add.tileSprite(
       MAP_PIXEL_W / 2,
       MAP_PIXEL_H / 2,
       MAP_PIXEL_W,
       MAP_PIXEL_H,
-      'tile-ground'
+      'tile-ground-grass'
     );
     this.groundTileSprite.setDepth(0);
 
-    // Игрок
-    this.player = this.add.rectangle(DEFAULT_SPAWN.x, DEFAULT_SPAWN.y, 36, 36, 0x7cfc00);
-    this.player.setStrokeStyle(2, 0xffffff);
+    // Персонаж — сочный детализированный WebP спрайт!
+    this.player = this.add.image(DEFAULT_SPAWN.x, DEFAULT_SPAWN.y, 'player');
+    this.player.setScale(0.85); // Масштабируем спрайт
     this.player.setDepth(500);
 
     // Панель «поделиться с друзьями» — справа вверху
@@ -177,20 +177,32 @@ export class WorldScene extends Phaser.Scene {
 
   private renderMapTiles(): void {
     if (!this.mapJson) return;
-    // Отрисовываем только дороги поверх травы
+
+    // Очищаем старые тайлы, если были
+    for (const img of this.staticTileImages) {
+      img.destroy();
+    }
+    this.staticTileImages = [];
+
+    // Отрисовываем тайлы поверх основы
     for (const [key, type] of Object.entries(this.mapJson.tiles)) {
-      if (type === 'road') {
-        const parts = key.split(',');
-        const x = Number(parts[0]);
-        const y = Number(parts[1]);
-        if (Number.isInteger(x) && Number.isInteger(y)) {
-          const rotation = this.mapJson.rotations?.[key] ?? 0;
-          const px = x * TILE_SIZE + TILE_SIZE / 2;
-          const py = y * TILE_SIZE + TILE_SIZE / 2;
-          
-          const img = this.add.image(px, py, 'tile-road');
+      const parts = key.split(',');
+      const x = Number(parts[0]);
+      const y = Number(parts[1]);
+      if (Number.isInteger(x) && Number.isInteger(y)) {
+        const rotation = this.mapJson.rotations?.[key] ?? 0;
+        const px = x * TILE_SIZE + TILE_SIZE / 2;
+        const py = y * TILE_SIZE + TILE_SIZE / 2;
+        
+        // Ключи спрайтов соответствуют типам тайлов: 'tile-ground-grass', 'tile-road-straight' и т.д.
+        const spriteKey = `tile-${type}`;
+        
+        // Не перерисовываем базовую траву, чтобы сэкономить перформанс, но рисуем всё остальное
+        if (type !== 'ground-grass') {
+          const img = this.add.image(px, py, spriteKey);
           img.setDepth(1);
           img.setAngle(rotation);
+          this.staticTileImages.push(img);
         }
       }
     }
@@ -466,12 +478,6 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  private isPeerSnapshot(v: unknown): v is PeerSnapshot {
-    if (!v || typeof v !== 'object') return false;
-    const p = v as Partial<PeerSnapshot>;
-    return typeof p.id === 'string' && typeof p.x === 'number' && typeof p.y === 'number';
-  }
-
   private renderRemoteInterpolated(now: number): void {
     if (this.snapshotBuffer.length === 0) return;
     const renderTime = now - SNAPSHOT_INTERP_DELAY_MS;
@@ -587,8 +593,10 @@ export class WorldScene extends Phaser.Scene {
   private ensureRemote(id: string, x: number, y: number): void {
     let rect = this.remotePlayers.get(id);
     if (!rect) {
-      rect = this.add.rectangle(x, y, 36, 36, REMOTE_TINT);
-      rect.setStrokeStyle(2, REMOTE_BORDER);
+      // Иконка для других игроков тоже КАРТИНКА, но затонированная!
+      rect = this.add.image(x, y, 'player');
+      rect.setScale(0.85);
+      rect.setTint(REMOTE_TINT);
       rect.setDepth(500);
       this.remotePlayers.set(id, rect);
       this.updateHUDUI();
@@ -715,7 +723,7 @@ export class WorldScene extends Phaser.Scene {
     hud.style.color = '#7cfc00';
     hud.style.border = '2px solid #7cfc00';
     hud.style.borderRadius = '6px';
-    hud.style.padding = '10px 14px';
+    hud.style.padding = '12px 16px';
     hud.style.fontFamily = 'monospace';
     hud.style.fontSize = '14px';
     hud.style.zIndex = '9999';
@@ -723,8 +731,12 @@ export class WorldScene extends Phaser.Scene {
     hud.style.boxShadow = '0 2px 10px rgba(0,0,0,0.5)';
 
     hud.innerHTML = `
-      <div style="font-weight:bold; font-size:16px; margin-bottom:4px; color:#fff;">🎒 MONEYROLL HUD</div>
-      <div id="hud-money">Баланс: $5.00</div>
+      <div style="font-weight:bold; font-size:16px; margin-bottom:6px; color:#fff; display:flex; align-items:center;">
+        <img src="/assets/chars/player.webp" style="width:24px; height:24px; margin-right:8px;" /> MONEYROLL HUD
+      </div>
+      <div id="hud-money" style="display:flex; align-items:center; margin-bottom:4px;">
+        <img src="/assets/icons/coin.webp" style="width:16px; height:16px; margin-right:6px;" /> Баланс: $5.00
+      </div>
       <div id="hud-weight">Вес сумки: 0.0 / 8.0 кг</div>
       <div style="width: 150px; background: #333; height: 6px; border-radius: 3px; margin: 4px 0 8px 0; overflow:hidden;">
         <div id="hud-weight-bar" style="background:#7cfc00; width:0%; height:100%; transition: width 0.2s;"></div>
@@ -779,7 +791,9 @@ export class WorldScene extends Phaser.Scene {
 
     inv.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; border-bottom:1px solid #333; padding-bottom:6px;">
-        <span style="font-weight:bold; font-size:15px; color:#7cfc00; letter-spacing:1px;">🎒 МОЙ РЮКЗАК (3х4 слота)</span>
+        <span style="font-weight:bold; font-size:15px; color:#7cfc00; letter-spacing:1px; display:flex; align-items:center;">
+          🎒 МОЙ РЮКЗАК (3х4 слота)
+        </span>
         <button id="btn-close-inv" style="background:none; border:none; color:#ff4444; font-weight:bold; cursor:pointer; font-size:16px;">[X]</button>
       </div>
       
@@ -861,7 +875,7 @@ export class WorldScene extends Phaser.Scene {
     if (!this.hudOverlayEl) return;
 
     const moneyEl = this.hudOverlayEl.querySelector('#hud-money');
-    if (moneyEl) moneyEl.innerHTML = `Баланс: <strong style="color:#fff;">$${this.localMoney.toFixed(2)}</strong>`;
+    if (moneyEl) moneyEl.innerHTML = `<img src="/assets/icons/coin.webp" style="width:18px; height:18px; margin-right:6px;" /> Баланс: <strong style="color:#fff;">$${this.localMoney.toFixed(2)}</strong>`;
 
     const weightEl = this.hudOverlayEl.querySelector('#hud-weight');
     if (weightEl) weightEl.innerHTML = `Вес сумки: <strong style="color:#fff;">${this.currentWeight.toFixed(1)}</strong> / ${MAX_INVENTORY_WEIGHT} кг`;
@@ -961,5 +975,11 @@ export class WorldScene extends Phaser.Scene {
   private removeKioskUI(): void {
     const existing = document.getElementById('game-kiosk-panel');
     if (existing) existing.remove();
+  }
+
+  private isPeerSnapshot(v: unknown): v is PeerSnapshot {
+    if (!v || typeof v !== 'object') return false;
+    const p = v as Partial<PeerSnapshot>;
+    return typeof p.id === 'string' && typeof p.x === 'number' && typeof p.y === 'number';
   }
 }

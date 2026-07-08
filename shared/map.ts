@@ -7,7 +7,16 @@ export const MAP_VERSION = 1;
 export const MAP_WIDTH = 30; // Карта мира 30х30 клеток
 export const MAP_HEIGHT = 30;
 export const TILE_SIZE = 128; // Тайлы 128х128 пикселей
-export const TILE_TYPES = ['ground', 'road'] as const;
+
+export const TILE_TYPES = [
+  'ground-grass',
+  'ground-sand',
+  'ground-dirt',
+  'road-straight',
+  'road-corner',
+  'road-t-junction',
+  'road-crossroad'
+] as const;
 
 export type TileType = (typeof TILE_TYPES)[number];
 
@@ -69,6 +78,11 @@ export function emptyMap(): MapDocument {
 
 /** Цикл "следующий тип" при клике в редакторе. */
 export const NEXT_TILE: Record<TileType, TileType> = {
-  ground: 'road',
-  road: 'ground',
+  'ground-grass': 'ground-sand',
+  'ground-sand': 'ground-dirt',
+  'ground-dirt': 'road-straight',
+  'road-straight': 'road-corner',
+  'road-corner': 'road-t-junction',
+  'road-t-junction': 'road-crossroad',
+  'road-crossroad': 'ground-grass',
 };

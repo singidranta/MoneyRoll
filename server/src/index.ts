@@ -10,6 +10,7 @@ import type { WireMessage } from './World.js';
 import {
   emptyMap,
   parseKey,
+  TILE_TYPES,
   type MapDocument,
   type TileType,
 } from '../../shared/map.js';
@@ -56,7 +57,7 @@ async function loadMap(): Promise<MapDocument> {
     for (const [k, t] of Object.entries(parsed.tiles ?? {})) {
       const pos = parseKey(k);
       if (!pos) continue;
-      if (t !== 'ground' && t !== 'road') continue;
+      if (!TILE_TYPES.includes(t)) continue;
       if (pos.x < 0 || pos.x >= parsed.width) continue;
       if (pos.y < 0 || pos.y >= parsed.height) continue;
       tiles[k] = t;
@@ -138,7 +139,7 @@ app.put('/api/map', async (req, res) => {
   for (const [k, t] of Object.entries(body.tiles ?? {})) {
     const pos = parseKey(k);
     if (!pos) continue;
-    if (t !== 'ground' && t !== 'road') continue;
+    if (!TILE_TYPES.includes(t)) continue;
     tiles[k] = t;
   }
   const rotations: Record<string, number> = {};

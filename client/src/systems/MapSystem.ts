@@ -3,8 +3,13 @@ import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, type MapDocument, type TileType } fro
 const ENDPOINT = '/api/map';
 
 export const TILE_COLORS: Record<TileType, number> = {
-  ground: 0x6a8a4e,  // muted grassy green-brown
-  road: 0x4a4a55,    // asphalt gray
+  'ground-grass': 0x6a8a4e,
+  'ground-sand': 0xd4a847,
+  'ground-dirt': 0x8a6f4d,
+  'road-straight': 0x4a4a55,
+  'road-corner': 0x4a4a55,
+  'road-t-junction': 0x4a4a55,
+  'road-crossroad': 0x4a4a55,
 };
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error';
