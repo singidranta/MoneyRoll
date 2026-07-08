@@ -10,6 +10,7 @@ import type { WireMessage } from './World.js';
 import {
   emptyMap,
   parseKey,
+  TILE_TYPES,
   type MapDocument,
   type TileType,
 } from '../../shared/map.js';
@@ -56,12 +57,19 @@ async function loadMap(): Promise<MapDocument> {
     for (const [k, t] of Object.entries(parsed.tiles ?? {})) {
       const pos = parseKey(k);
       if (!pos) continue;
-      if (t !== 'ground' && t !== 'road') continue;
+      if (!TILE_TYPES.includes(t)) continue;
       if (pos.x < 0 || pos.x >= parsed.width) continue;
       if (pos.y < 0 || pos.y >= parsed.height) continue;
       tiles[k] = t;
     }
-    return { ...parsed, tiles, version: 1 };
+    const rotations: Record<string, number> = {};
+    for (const [k, r] of Object.entries(parsed.rotations ?? {})) {
+      const pos = parseKey(k);
+      if (!pos) continue;
+      if (typeof r !== 'number') continue;
+      rotations[k] = r;
+    }
+    return { ...parsed, tiles, rotations, version: 1 };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
@@ -80,6 +88,7 @@ let mapDirty = false;
 async function initMap(): Promise<void> {
   await ensureDataDir();
   currentMap = await loadMap();
+  world.setMap(currentMap);
   console.log(
     `[MoneyRoll][server] map loaded: ${Object.keys(currentMap.tiles).length} tiles from ${MAP_FILE}`,
   );
@@ -130,10 +139,18 @@ app.put('/api/map', async (req, res) => {
   for (const [k, t] of Object.entries(body.tiles ?? {})) {
     const pos = parseKey(k);
     if (!pos) continue;
-    if (t !== 'ground' && t !== 'road') continue;
+    if (!TILE_TYPES.includes(t)) continue;
     tiles[k] = t;
   }
-  currentMap = { ...body, tiles, version: 1 };
+  const rotations: Record<string, number> = {};
+  for (const [k, r] of Object.entries(body.rotations ?? {})) {
+    const pos = parseKey(k);
+    if (!pos) continue;
+    if (typeof r !== 'number') continue;
+    rotations[k] = r;
+  }
+  currentMap = { ...body, tiles, rotations, version: 1 };
+  world.setMap(currentMap);
   mapDirty = true;
   await flushMap();
   res.json({ ok: true, tiles: Object.keys(tiles).length });
@@ -151,8 +168,17 @@ wss.on('connection', (ws, req) => {
 
   world.add(id, ws);
 
-  // Привет + стартовый список игроков.
-  ws.send(JSON.stringify({ type: 'welcome', id, players: world.snapshot(id) }));
+  // Привет + стартовый список игроков, бутылок, киосков, денег и инвентаря.
+  const playerClient = world.getClient(id);
+  ws.send(JSON.stringify({
+    type: 'welcome',
+    id,
+    players: world.snapshot(id),
+    bottles: world.getBottles(),
+    kiosks: world.getKiosks(),
+    money: playerClient?.money ?? 5.0,
+    inventory: playerClient?.inventory ?? Array(12).fill(null)
+  }));
 
   // Сообщаем остальным, что новый игрок появился.
   world.broadcastExcept(id, { type: 'peer-join', id });

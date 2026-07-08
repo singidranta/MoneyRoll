@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { BootScene } from '../scenes/BootScene';
+import { PreloadScene } from '../scenes/PreloadScene';
 import { EditorScene } from '../scenes/EditorScene';
 
 export const EditorGameConfig: Phaser.Types.Core.GameConfig = {
@@ -15,5 +16,5 @@ export const EditorGameConfig: Phaser.Types.Core.GameConfig = {
     target: 60,
     forceSetTimeOut: false,
   },
-  scene: [BootScene, EditorScene],
+  scene: [BootScene, PreloadScene, EditorScene],
 };
