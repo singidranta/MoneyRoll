@@ -39,15 +39,15 @@ export class WorldScene extends Phaser.Scene {
   private localMoney = 5.0;
   private localInventory: (BottleType | null)[] = Array(INVENTORY_SLOTS).fill(null);
   private currentWeight = 0.0;
-  private backpackTier = 1; // 1 = Пакет, 2 = Сумка Adidas, 3 = Рюкзак туриста
+  private backpackTier = 1; // 1 = Пакет, 2 = Сумка Adidas, 3 = Рюкзак
 
   // Система выносливости (Stamina)
   private stamina = 100.0;
   private isExhausted = false;
 
   // Временные баффы
-  private energyDrinkBuffTimer = 0.0; // Суперскорость
-  private shawarmaBuffTimer = 0.0; // Безлимитная энергия
+  private energyDrinkBuffTimer = 0.0;
+  private shawarmaBuffTimer = 0.0;
 
   private mapJson: MapDocument | null = null;
   private groundTileSprite?: Phaser.GameObjects.TileSprite;
@@ -65,12 +65,14 @@ export class WorldScene extends Phaser.Scene {
 
   // HTML UI элементы
   private hudOverlayEl?: HTMLDivElement;
-  private inventoryEl?: HTMLDivElement;
-  private foodCartEl?: HTMLDivElement;
+  private dashboardPanelEl?: HTMLDivElement; // Единый Дашборд-панель для объединения окон!
 
   private isInventoryOpen = false;
   private nearKioskId: string | null = null;
   private nearFoodCartEntity: any = null; // Текущий ларёк рядом
+
+  // Подсвечиваемая интерактивная кнопка [E] над объектом на карте!
+  private usePrompt!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'World' });
@@ -143,6 +145,30 @@ export class WorldScene extends Phaser.Scene {
     this.obstaclesGroup = this.physics.add.staticGroup();
     this.obstaclesCollider = this.physics.add.collider(this.player, this.obstaclesGroup);
 
+    // Подсвечиваемая интерактивная кнопка [E] над объектом взаимодействия!
+    this.usePrompt = this.add.text(0, 0, '  [ E ]  ', {
+      fontFamily: 'monospace',
+      fontSize: '22px',
+      fontStyle: 'bold',
+      color: '#ffd700',
+      backgroundColor: '#151515ee',
+      padding: { x: 10, y: 6 }
+    });
+    this.usePrompt.setStroke('#ffd700', 3);
+    this.usePrompt.setOrigin(0.5);
+    this.usePrompt.setDepth(1000);
+    this.usePrompt.setVisible(false);
+
+    // Пульсирующий сочный эффект для [E]
+    this.tweens.add({
+      targets: this.usePrompt,
+      scale: 1.15,
+      yoyo: true,
+      repeat: -1,
+      duration: 600,
+      ease: 'Sine.easeInOut'
+    });
+
     // Настройка камеры
     this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
     this.cameras.main.setBackgroundColor('#0a0a0a');
@@ -173,9 +199,8 @@ export class WorldScene extends Phaser.Scene {
       );
     });
 
-    // Создание HTML HUD и инвентаря
+    // Создание HTML HUD
     this.createHTMLHUD();
-    this.createHTMLInventory();
 
     void this.loadMapData();
 
@@ -267,7 +292,6 @@ export class WorldScene extends Phaser.Scene {
 
         this.kiosksSpritesMap.set(entity.id, kioskSprite);
       } else if (entity.type === 'food-cart') {
-        // Ларёк с шаурмой
         const kioskSprite = this.add.image(px, py, 'food-cart');
         kioskSprite.setScale(1.0);
         kioskSprite.setDepth(100);
@@ -334,8 +358,8 @@ export class WorldScene extends Phaser.Scene {
           this.localMoney = msg.money as number;
           this.localInventory = msg.inventory as (BottleType | null)[];
           this.backpackTier = (msg.backpackTier as number) || 1;
-          this.updateInventoryUI();
           this.updateHUDUI();
+          this.updateDashboard();
 
           if (Array.isArray(msg.players)) {
             const initial = new Map<string, { x: number; y: number }>();
@@ -445,8 +469,8 @@ export class WorldScene extends Phaser.Scene {
         this.currentWeight = weight;
         
         this.removeBottleClient(bottleId);
-        this.updateInventoryUI();
         this.updateHUDUI();
+        this.updateDashboard();
         this.showFloatingText(text, this.player.x, this.player.y - 30, '#7cfc00');
         break;
       }
@@ -477,8 +501,8 @@ export class WorldScene extends Phaser.Scene {
         this.localInventory = inv;
         this.currentWeight = weight;
 
-        this.updateInventoryUI();
         this.updateHUDUI();
+        this.updateDashboard();
         
         this.showFloatingText(text, this.player.x, this.player.y - 35, '#ffd700');
         this.cameras.main.shake(150, 0.005);
@@ -491,7 +515,6 @@ export class WorldScene extends Phaser.Scene {
         break;
       }
 
-      // Новые обработчики еды и улучшений
       case 'upgrade-success': {
         const tier = msg.backpackTier as number;
         const money = msg.money as number;
@@ -500,9 +523,8 @@ export class WorldScene extends Phaser.Scene {
         this.backpackTier = tier;
         this.localMoney = money;
 
-        this.updateInventoryUI();
         this.updateHUDUI();
-        this.updateFoodCartUI(); // Обновляем цены/кнопки в магазине
+        this.updateDashboard();
 
         this.showFloatingText(text, this.player.x, this.player.y - 40, '#ffd700');
         this.cameras.main.shake(200, 0.008);
@@ -526,9 +548,9 @@ export class WorldScene extends Phaser.Scene {
         if (item === 'shawarma') {
           this.stamina = 100.0;
           this.isExhausted = false;
-          this.shawarmaBuffTimer = 20.0; // Безлимитная выносливость на 20 сек
+          this.shawarmaBuffTimer = 20.0;
         } else if (item === 'energy') {
-          this.energyDrinkBuffTimer = 30.0; // Суперскорость на 30 сек
+          this.energyDrinkBuffTimer = 30.0;
         }
 
         this.showFloatingText(text, this.player.x, this.player.y - 40, '#7cfc00');
@@ -593,7 +615,6 @@ export class WorldScene extends Phaser.Scene {
     const now = performance.now();
     const dt = Math.min(delta, 100) / 1000;
 
-    // Снижаем таймеры баффов
     if (this.energyDrinkBuffTimer > 0) this.energyDrinkBuffTimer -= dt;
     if (this.shawarmaBuffTimer > 0) this.shawarmaBuffTimer -= dt;
 
@@ -610,19 +631,16 @@ export class WorldScene extends Phaser.Scene {
       vy *= inv;
     }
 
-    // Рассчитываем скорость (Базовая / Спринт / Баффы)
     const isSprinting = this.input.keyboard!.addKey('SHIFT').isDown && (vx !== 0 || vy !== 0) && !this.isExhausted;
     
-    let currentSpeed = MOVE_SPEED; // 240
+    let currentSpeed = MOVE_SPEED;
     if (this.energyDrinkBuffTimer > 0) {
-      currentSpeed = 440; // Суперскорость под баффом ягуара!
+      currentSpeed = 440;
     } else if (isSprinting) {
-      currentSpeed = 350; // Обычный спринт
+      currentSpeed = 350;
     }
 
-    // Логика выносливости (Stamina)
     if (isSprinting && this.shawarmaBuffTimer <= 0) {
-      // Расход энергии зависит от веса мешка!
       const drainRate = 18 * (1 + this.currentWeight / (this.backpackTier === 1 ? 8.0 : this.backpackTier === 2 ? 15.0 : 30.0));
       this.stamina = Math.max(0, this.stamina - drainRate * dt);
       if (this.stamina === 0) {
@@ -630,18 +648,15 @@ export class WorldScene extends Phaser.Scene {
         this.showFloatingText('УСТАЛ! Передохни!', this.player.x, this.player.y - 30, '#ff3333');
       }
     } else {
-      // Восстановление энергии
       this.stamina = Math.min(100, this.stamina + 12 * dt);
       if (this.isExhausted && this.stamina >= 20) {
-        this.isExhausted = false; // Можно снова бегать!
+        this.isExhausted = false;
       }
     }
 
-    // Движение через Arcade Physics! Полностью блокирует хождение сквозь Стены и Квартиры!
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(vx * currentSpeed, vy * currentSpeed);
 
-    // Проигрывание анимации в зависимости от направления движения
     if (vx < 0) {
       this.player.play('walk-left', true);
     } else if (vx > 0) {
@@ -652,22 +667,19 @@ export class WorldScene extends Phaser.Scene {
       this.player.play('walk-down', true);
     } else {
       this.player.stop();
-      this.player.setFrame(0); // Остановка в кадре по умолчанию (стоит прямо)
+      this.player.setFrame(0);
     }
 
     if ((vx !== 0 || vy !== 0) && this.netcode) {
       this.sendMoveThrottled();
     }
 
-    // Горячие клавиши инвентаря
     if (Phaser.Input.Keyboard.JustDown(this.keyI) || Phaser.Input.Keyboard.JustDown(this.keyTab)) {
       this.toggleInventory();
     }
 
-    // Обновляем HUD и полоску выносливости
     this.updateHUDUI();
 
-    // ───── Подбор бутылок при соприкосновении ─────
     for (const [id, img] of this.bottlesMap.entries()) {
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, img.x, img.y);
       if (dist < 48) {
@@ -678,9 +690,11 @@ export class WorldScene extends Phaser.Scene {
       }
     }
 
-    // ───── Взаимодействие с объектами карты (Киоски, Ларьки Шаурмы) ─────
+    // ───── Взаимодействие с объектами карты ─────
     let activeKioskId: string | null = null;
     let activeFoodCartEntity: any = null;
+    let targetX = 0;
+    let targetY = 0;
 
     if (this.mapJson && this.mapJson.entities) {
       for (const entity of Object.values(this.mapJson.entities)) {
@@ -694,6 +708,8 @@ export class WorldScene extends Phaser.Scene {
           } else if (entity.type === 'food-cart') {
             activeFoodCartEntity = entity;
           }
+          targetX = kx;
+          targetY = ky;
           break;
         }
       }
@@ -702,30 +718,23 @@ export class WorldScene extends Phaser.Scene {
     this.nearKioskId = activeKioskId;
     this.nearFoodCartEntity = activeFoodCartEntity;
 
-    // ───── Авто-закрытие меню при отдалении ─────
-    if (!this.nearKioskId && document.getElementById('game-kiosk-panel')) {
-      this.closeKioskUI();
-      this.toggleInventory(false);
-    }
-    if (!this.nearFoodCartEntity && document.getElementById('game-food-cart-panel')) {
-      this.closeFoodCartUI();
-      this.toggleInventory(false);
-    }
+    // ───── Подсветка кнопки [E] прямо над активным объектом на карте! ─────
+    if (this.nearKioskId || this.nearFoodCartEntity) {
+      this.usePrompt.setPosition(targetX, targetY - 80);
+      this.usePrompt.setVisible(true);
 
-    // Всплывающие плашки на экране
-    const kioskPrompt = document.getElementById('kiosk-prompt-indicator');
-    if (kioskPrompt) {
-      kioskPrompt.style.display = this.nearKioskId ? 'block' : 'none';
-      if (this.nearKioskId && Phaser.Input.Keyboard.JustDown(this.keyE)) {
-        this.openKioskUI();
+      if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
+        if (this.nearKioskId) {
+          this.toggleInventory(true); // Открывает Дашборд с автоматом сдачи!
+        } else if (this.nearFoodCartEntity) {
+          this.toggleInventory(true); // Открывает Дашборд с ларьком шаурмы!
+        }
       }
-    }
-
-    const foodPrompt = document.getElementById('food-cart-prompt-indicator');
-    if (foodPrompt) {
-      foodPrompt.style.display = this.nearFoodCartEntity ? 'block' : 'none';
-      if (this.nearFoodCartEntity && Phaser.Input.Keyboard.JustDown(this.keyE)) {
-        this.openFoodCartUI();
+    } else {
+      this.usePrompt.setVisible(false);
+      // Авто-закрытие дашборда при отдалении
+      if (this.isInventoryOpen) {
+        this.toggleInventory(false);
       }
     }
 
@@ -757,269 +766,244 @@ export class WorldScene extends Phaser.Scene {
 
     const hud = document.createElement('div');
     hud.id = 'game-hud-overlay';
-    hud.style.position = 'fixed';
-    hud.style.left = '16px';
-    hud.style.top = '16px';
-    hud.style.background = 'rgba(15,15,15,0.92)';
-    hud.style.backdropFilter = 'blur(10px)';
-    hud.style.color = '#ffffff';
-    hud.style.border = '3px solid #7cfc00';
-    hud.style.borderRadius = '10px';
-    hud.style.padding = '18px 24px';
-    hud.style.fontFamily = 'monospace';
-    hud.style.fontSize = '18px';
-    hud.style.zIndex = '9999';
-    hud.style.lineHeight = '1.6';
-    hud.style.boxShadow = '0 5px 25px rgba(0,0,0,0.6)';
-    hud.style.width = '320px';
-
-    hud.innerHTML = `
-      <div style="font-weight:bold; font-size:22px; margin-bottom:8px; color:#fff; display:flex; align-items:center;">
-        🎒 MONEYROLL HUD
-      </div>
-      <div id="hud-money" style="display:flex; align-items:center; margin-bottom:6px; font-weight:bold; font-size:20px; color:#7cfc00;">
-        🪙 Баланс: $5.00
-      </div>
-      <div id="hud-weight">Сумка: Пакет (0.0 / 8.0 кг)</div>
-      
-      <!-- Полоска выносливости (Stamina) -->
-      <div style="margin-top:8px;">
-        <span style="font-size:13px; color:#ccc; display:block; margin-bottom:4px;">⚡ Энергия (Бег: зажми Shift):</span>
-        <div style="width: 100%; background: #333; height: 14px; border-radius: 6px; overflow:hidden; border:1px solid #555;">
-          <div id="hud-stamina-bar" style="background:#ffd700; width:100%; height:100%; transition: width 0.1s;"></div>
-        </div>
-      </div>
-
-      <div style="font-size:14px; color:#ccc; margin-top:10px;">Игроков рядом: <span id="hud-players">1</span></div>
-      <div style="font-size:12px; color:#ff9900; margin-top:4px;">Клавиша L: лаг-симулятор (${this.simulatedLagMs}мс)</div>
-      
-      <button id="btn-toggle-inv" style="margin-top:14px; width:100%; padding:12px; background: #7cfc00; border: none; border-radius: 6px; font-weight:bold; cursor:pointer; font-family: monospace; color:#000; font-size:16px; transition: background 0.15s, transform 0.1s;">ОТКРЫТЬ РЮКЗАК (I)</button>
-      
-      <!-- Индикатор автомата сдачи -->
-      <div id="kiosk-prompt-indicator" style="display:none; margin-top:12px; background:rgba(255,215,0,0.2); color:#ffd700; border:2px solid #ffd700; padding:10px; border-radius:4px; text-align:center; font-weight:bold; font-size:14px; animation: pulse 1s infinite alternate;">
-        [E] ОТКРЫТЬ АВТОМАТ СДАЧИ
-      </div>
-
-      <!-- Индикатор Ларька Шаурмы -->
-      <div id="food-cart-prompt-indicator" style="display:none; margin-top:12px; background:rgba(0,204,255,0.2); color:#00ccff; border:2px solid #00ccff; padding:10px; border-radius:4px; text-align:center; font-weight:bold; font-size:14px; animation: pulse 1s infinite alternate;">
-        [E] ЗАЙТИ К АШОТУ (ШАУРМА)
-      </div>
-    `;
-
     document.body.appendChild(hud);
     this.hudOverlayEl = hud;
 
-    hud.querySelector('#btn-toggle-inv')?.addEventListener('click', () => {
-      this.toggleInventory();
-    });
-  }
+    // 1. БАЛАНС: Сверху Справа (только деньги!)
+    const moneyPanel = document.createElement('div');
+    moneyPanel.id = 'hud-money-panel';
+    moneyPanel.style.position = 'fixed';
+    moneyPanel.style.right = '16px';
+    moneyPanel.style.top = '16px';
+    moneyPanel.style.background = 'rgba(15,15,15,0.92)';
+    moneyPanel.style.backdropFilter = 'blur(10px)';
+    moneyPanel.style.color = '#7cfc00';
+    moneyPanel.style.border = '3px solid #ffd700';
+    moneyPanel.style.borderRadius = '10px';
+    moneyPanel.style.padding = '12px 20px';
+    moneyPanel.style.fontFamily = 'monospace';
+    moneyPanel.style.fontSize = '22px';
+    moneyPanel.style.fontWeight = 'bold';
+    moneyPanel.style.boxShadow = '0 5px 25px rgba(0,0,0,0.6)';
+    moneyPanel.style.zIndex = '9999';
+    moneyPanel.innerHTML = `🪙 $<span id="hud-money-val">5.00</span>`;
+    hud.appendChild(moneyPanel);
 
-  private createHTMLInventory(): void {
-    this.removeHTMLInventory();
-
-    const inv = document.createElement('div');
-    inv.id = 'game-inventory-panel';
-    inv.style.position = 'fixed';
-    inv.style.left = '50%';
-    inv.style.top = '50%';
-    inv.style.transform = 'translate(-50%, -50%)';
-    inv.style.background = "url('/assets/ui/panel-bg.webp') repeat";
-    inv.style.border = '4px solid #7cfc00';
-    inv.style.borderRadius = '10px';
-    inv.style.padding = '25px';
-    inv.style.fontFamily = 'monospace';
-    inv.style.zIndex = '99999';
-    inv.style.boxShadow = '0 8px 30px rgba(0,0,0,0.85)';
-    inv.style.display = 'none';
-    inv.style.pointerEvents = 'auto';
-    inv.style.imageRendering = 'pixelated';
-
-    inv.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:2px solid #333; padding-bottom:10px;">
-        <span style="font-weight:bold; font-size:22px; color:#7cfc00; letter-spacing:1px; display:flex; align-items:center;">
-          🎒 МОЙ РЮКЗАК (3х4 слота)
-        </span>
-        <button id="btn-close-inv" style="background:none; border:none; color:#ff4444; font-weight:bold; cursor:pointer; font-size:24px;">[X]</button>
+    // 2. ВЕС И ЭНЕРГИЯ: Слева Снизу
+    const statsPanel = document.createElement('div');
+    statsPanel.id = 'hud-stats-panel';
+    statsPanel.style.position = 'fixed';
+    statsPanel.style.left = '16px';
+    statsPanel.style.bottom = '16px';
+    statsPanel.style.background = 'rgba(15,15,15,0.92)';
+    statsPanel.style.backdropFilter = 'blur(10px)';
+    statsPanel.style.color = '#ffffff';
+    statsPanel.style.border = '3px solid #7cfc00';
+    statsPanel.style.borderRadius = '10px';
+    statsPanel.style.padding = '14px 20px';
+    statsPanel.style.fontFamily = 'monospace';
+    statsPanel.style.fontSize = '15px';
+    statsPanel.style.boxShadow = '0 5px 25px rgba(0,0,0,0.6)';
+    statsPanel.style.zIndex = '9999';
+    statsPanel.style.width = '260px';
+    statsPanel.innerHTML = `
+      <div id="hud-weight" style="font-weight:bold; margin-bottom:6px;">🎒 Пакет (0.0 / 8.0 кг)</div>
+      <div style="width: 100%; background: #333; height: 6px; border-radius: 3px; overflow:hidden; border:1px solid #555; margin-bottom:10px;">
+        <div id="hud-weight-bar" style="background:#7cfc00; width:0%; height:100%; transition: width 0.2s;"></div>
       </div>
-      
-      <div id="inventory-grid" style="display:grid; grid-template-columns: repeat(4, 96px); grid-template-rows: repeat(3, 96px); gap: 12px; margin-bottom:16px;">
-        <!-- Сюда вставляются слоты динамически -->
-      </div>
-      
-      <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px; color:#ccc;">
-        <span>Клик по предмету — сдать (у автомата)</span>
-        <span id="inv-weight-status">Вес: 0.0 / 8.0 кг</span>
+      <div style="font-size:12px; color:#aaa; margin-bottom:4px;">⚡ Энергия (Shift):</div>
+      <div style="width: 100%; background: #333; height: 10px; border-radius: 5px; overflow:hidden; border:1px solid #555;">
+        <div id="hud-stamina-bar" style="background:#ffd700; width:100%; height:100%; transition: width 0.1s;"></div>
       </div>
     `;
+    hud.appendChild(statsPanel);
 
-    document.body.appendChild(inv);
-    this.inventoryEl = inv;
+    // 3. ИКОНКА РЮКЗАКА: Справа Снизу (только иконка!)
+    const btnBackpack = document.createElement('button');
+    btnBackpack.id = 'btn-toggle-backpack';
+    btnBackpack.style.position = 'fixed';
+    btnBackpack.style.right = '16px';
+    btnBackpack.style.bottom = '16px';
+    btnBackpack.style.width = '64px';
+    btnBackpack.style.height = '64px';
+    btnBackpack.style.background = '#7cfc00';
+    btnBackpack.style.border = 'none';
+    btnBackpack.style.borderRadius = '50%';
+    btnBackpack.style.cursor = 'pointer';
+    btnBackpack.style.fontSize = '32px';
+    btnBackpack.style.display = 'flex';
+    btnBackpack.style.alignItems = 'center';
+    btnBackpack.style.justifyContent = 'center';
+    btnBackpack.style.boxShadow = '0 5px 20px rgba(0,0,0,0.6)';
+    btnBackpack.style.zIndex = '9999';
+    btnBackpack.style.transition = 'transform 0.1s';
+    btnBackpack.innerHTML = '🎒';
 
-    inv.querySelector('#btn-close-inv')?.addEventListener('click', () => {
-      this.toggleInventory(false);
-    });
-
-    this.updateInventoryUI();
+    btnBackpack.addEventListener('mouseenter', () => btnBackpack.style.transform = 'scale(1.1)');
+    btnBackpack.addEventListener('mouseleave', () => btnBackpack.style.transform = 'scale(1.0)');
+    btnBackpack.addEventListener('click', () => this.toggleInventory());
+    hud.appendChild(btnBackpack);
   }
 
   private toggleInventory(force?: boolean): void {
     this.isInventoryOpen = force !== undefined ? force : !this.isInventoryOpen;
-    if (this.inventoryEl) {
-      this.inventoryEl.style.display = this.isInventoryOpen ? 'block' : 'none';
+    this.updateDashboard();
+  }
+
+  /**
+   * ЕДИНЫЙ ЕДИНСТВЕННЫЙ ДАШБОРД (Dashboard):
+   * Объединяет все окна в единый красивый side-by-side splitscreen!
+   * - Если открыт Kiosk: слева Автомат, справа Инвентарь.
+   * - Если открыт Food-Cart: слева Ларёк, справа Инвентарь.
+   * - Если открыт только инвентарь: по центру Инвентарь.
+   */
+  private updateDashboard(): void {
+    this.removeDashboardPanel();
+
+    if (!this.isInventoryOpen) return;
+
+    const dashboard = document.createElement('div');
+    dashboard.id = 'game-dashboard-container';
+    dashboard.style.position = 'fixed';
+    dashboard.style.left = '50%';
+    dashboard.style.top = '50%';
+    dashboard.style.transform = 'translate(-50%, -50%)';
+    dashboard.style.display = 'flex';
+    dashboard.style.gap = '24px';
+    dashboard.style.zIndex = '99999';
+    dashboard.style.pointerEvents = 'auto';
+
+    document.body.appendChild(dashboard);
+    this.dashboardPanelEl = dashboard;
+
+    // 1. ЛЕВАЯ ПАНЕЛЬ: Действие (Автомат или Шаурма, если игрок рядом с ними!)
+    if (this.nearKioskId) {
+      const kioskPanel = document.createElement('div');
+      kioskPanel.style.background = 'rgba(15,15,15,0.92)';
+      kioskPanel.style.backdropFilter = 'blur(10px)';
+      kioskPanel.style.border = '3px solid #ffd700';
+      kioskPanel.style.borderRadius = '10px';
+      kioskPanel.style.padding = '20px';
+      kioskPanel.style.width = '320px';
+      kioskPanel.style.fontFamily = 'monospace';
+      kioskPanel.style.boxShadow = '0 5px 25px rgba(0,0,0,0.7)';
+      kioskPanel.style.color = '#fff';
+
+      kioskPanel.innerHTML = `
+        <h3 style="margin-top:0; border-bottom:2px solid #ffd700; padding-bottom:8px; color:#ffd700; text-align:center; font-size:20px;">🏪 АВТОМАТ СДАЧИ</h3>
+        <p style="font-size:14px; color:#ccc; line-height:1.5; margin-bottom:14px; text-align:center;">
+          Сдавай стеклотару в автомат! Кликни по бутылке в рюкзаке справа для поштучной сдачи, или сдай всё:
+        </p>
+        <button id="btn-recycle-all" style="width:100%; padding:12px; background:#ffd700; border:none; color:#000; font-weight:bold; cursor:pointer; font-size:15px; border-radius:6px; font-family:monospace; transition: transform 0.1s;">♻️ СДАТЬ ВСЕ БУТЫЛКИ</button>
+        <button id="btn-close-dashboard" style="width:100%; padding:10px; background:#333; border:1px solid #ff3333; color:#ff3333; font-weight:bold; cursor:pointer; border-radius:6px; margin-top:8px; font-family:monospace;">Закрыть</button>
+      `;
+
+      kioskPanel.querySelector('#btn-recycle-all')?.addEventListener('click', () => {
+        this.sendGameMessage({ type: 'sell-all-bottles' });
+      });
+      kioskPanel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => {
+        this.toggleInventory(false);
+      });
+
+      dashboard.appendChild(kioskPanel);
+
+    } else if (this.nearFoodCartEntity) {
+      const foodPanel = document.createElement('div');
+      foodPanel.style.background = 'rgba(15,15,15,0.92)';
+      foodPanel.style.backdropFilter = 'blur(10px)';
+      foodPanel.style.border = '3px solid #00ccff';
+      foodPanel.style.borderRadius = '10px';
+      foodPanel.style.padding = '20px';
+      foodPanel.style.width = '320px';
+      foodPanel.style.fontFamily = 'monospace';
+      foodPanel.style.boxShadow = '0 5px 25px rgba(0,0,0,0.7)';
+      foodPanel.style.color = '#fff';
+
+      const upgradeText = this.backpackTier === 1 
+        ? `<button id="btn-upgrade-bag-2" style="width:100%; padding:12px; background: #00ccff; border:none; color:#000; font-weight:bold; cursor:pointer; border-radius:6px; font-family:monospace; transition: transform 0.1s;">👜 Купить Сумку Adidas ($15.00)</button>` 
+        : this.backpackTier === 2 
+        ? `<button id="btn-upgrade-bag-3" style="width:100%; padding:12px; background: #7cfc00; border:none; color:#000; font-weight:bold; cursor:pointer; border-radius:6px; font-family:monospace; transition: transform 0.1s;">🎒 Купить Рюкзак туриста ($45.00)</button>`
+        : `<div style="text-align:center; padding:8px; background:#333; color:#aaa; border-radius:4px;">У тебя максимальный Рюкзак!</div>`;
+
+      foodPanel.innerHTML = `
+        <h3 style="margin-top:0; border-bottom:2px solid #00ccff; padding-bottom:6px; color:#00ccff; text-align:center; font-size:20px;">🏪 ШАУРМА У АШОТА</h3>
+        
+        <div style="margin-bottom:12px;">
+          <strong style="color:#ffd700; display:block; margin-bottom:4px;">🍕 ПИТАНИЕ:</strong>
+          <button id="btn-buy-shawa" style="width:100%; padding:12px; background:#ffd700; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between; font-family:monospace; border-radius:6px;">
+            <span>🌯 Сытная Шаурма</span>
+            <span>$1.50</span>
+          </button>
+          <button id="btn-buy-energy" style="width:100%; padding:12px; background:#ff6b6b; border:none; color:#fff; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; font-family:monospace; border-radius:6px;">
+            <span>⚡ Энергетик "Ягуар"</span>
+            <span>$3.00</span>
+          </button>
+        </div>
+
+        <div style="margin-bottom:12px; border-top:1px solid #333; padding-top:10px;">
+          <strong style="color:#7cfc00; display:block; margin-bottom:6px;">🎒 СУМКИ:</strong>
+          ${upgradeText}
+        </div>
+
+        <button id="btn-close-dashboard" style="width:100%; padding:10px; background:#333; border:1px solid #ff3333; color:#ff3333; font-weight:bold; cursor:pointer; border-radius:6px; font-family:monospace;">Закрыть</button>
+      `;
+
+      foodPanel.querySelector('#btn-buy-shawa')?.addEventListener('click', () => {
+        this.sendGameMessage({ type: 'buy-food', itemType: 'shawarma' });
+      });
+      foodPanel.querySelector('#btn-buy-energy')?.addEventListener('click', () => {
+        this.sendGameMessage({ type: 'buy-food', itemType: 'energy' });
+      });
+      foodPanel.querySelector('#btn-upgrade-bag-2')?.addEventListener('click', () => {
+        this.sendGameMessage({ type: 'upgrade-backpack', tier: 2 });
+      });
+      foodPanel.querySelector('#btn-upgrade-bag-3')?.addEventListener('click', () => {
+        this.sendGameMessage({ type: 'upgrade-backpack', tier: 3 });
+      });
+      foodPanel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => {
+        this.toggleInventory(false);
+      });
+
+      dashboard.appendChild(foodPanel);
     }
-  }
 
-  private openKioskUI(): void {
-    if (!this.nearKioskId) return;
-    this.toggleInventory(true); // Всегда открываем инвентарь при открытии киоска
+    // 2. ПРАВАЯ ПАНЕЛЬ: Рюкзак (Инвентарь 3х4 слота) — всегда отображается!
+    const inventoryPanel = document.createElement('div');
+    inventoryPanel.id = 'dashboard-inventory-panel';
+    inventoryPanel.style.background = 'rgba(15,15,15,0.92)';
+    inventoryPanel.style.backdropFilter = 'blur(10px)';
+    inventoryPanel.style.border = '3px solid #7cfc00';
+    inventoryPanel.style.borderRadius = '10px';
+    inventoryPanel.style.padding = '25px';
+    inventoryPanel.style.fontFamily = 'monospace';
+    inventoryPanel.style.boxShadow = '0 8px 30px rgba(0,0,0,0.85)';
+    inventoryPanel.style.color = '#fff';
 
-    this.removeKioskUI();
-
-    const kiosk = document.createElement('div');
-    kiosk.id = 'game-kiosk-panel';
-    kiosk.style.position = 'fixed';
-    kiosk.style.left = '10%';
-    kiosk.style.top = '50%';
-    kiosk.style.transform = 'translateY(-50%)';
-    kiosk.style.background = 'rgba(15,15,15,0.92)';
-    kiosk.style.backdropFilter = 'blur(10px)';
-    kiosk.style.border = '3px solid #ffd700';
-    kiosk.style.borderRadius = '10px';
-    kiosk.style.padding = '20px';
-    kiosk.style.width = '320px';
-    kiosk.style.fontFamily = 'monospace';
-    kiosk.style.zIndex = '99999';
-    kiosk.style.boxShadow = '0 5px 25px rgba(0,0,0,0.7)';
-    kiosk.style.pointerEvents = 'auto';
-
-    kiosk.innerHTML = `
-      <h3 style="margin-top:0; border-bottom:2px solid #ffd700; padding-bottom:6px; color:#ffd700; text-align:center; font-size:20px;">🏪 АВТОМАТ СДАЧИ БУТЫЛОК</h3>
-      <p style="font-size:14px; color:#ccc; line-height:1.5; margin-bottom:14px; text-align:center;">
-        Сдавай стеклотару в автомат! Кликни по бутылке в инвентаре, чтобы сдать её поштучно, либо нажми кнопку ниже.
-      </p>
+    inventoryPanel.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:2px solid #333; padding-bottom:10px;">
+        <span style="font-weight:bold; font-size:22px; color:#7cfc00; letter-spacing:1px;">🎒 МОЙ РЮКЗАК</span>
+        <button id="btn-close-dashboard-x" style="background:none; border:none; color:#ff4444; font-weight:bold; cursor:pointer; font-size:24px;">[X]</button>
+      </div>
       
-      <button id="btn-recycle-all" style="width:100%; padding:12px; background: #ffd700; border:none; color:#000; font-weight:bold; cursor:pointer; font-size:15px; letter-spacing:1px; margin-bottom:8px; font-family: monospace; border-radius:6px; transition: transform 0.1s;">♻️ СДАТЬ ВСЕ БУТЫЛКИ</button>
-      <button id="btn-close-kiosk" style="width:100%; padding:10px; background: #333; border: 1px solid #ff3333; color:#ff3333; font-weight:bold; cursor:pointer; font-family: monospace; border-radius:6px;">Закрыть</button>
+      <div id="inventory-grid" style="display:grid; grid-template-columns: repeat(4, 96px); grid-template-rows: repeat(3, 96px); gap: 12px; margin-bottom:16px;">
+        <!-- Сюда вставляются слоты -->
+      </div>
+      
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px; color:#ccc;">
+        <span>Сдача бутылок кликом в автомате</span>
+        <span id="inv-weight-status">Вес: 0.0 / 8.0 кг</span>
+      </div>
     `;
 
-    document.body.appendChild(kiosk);
-
-    kiosk.querySelector('#btn-recycle-all')?.addEventListener('click', () => {
-      this.sendGameMessage({ type: 'sell-all-bottles' });
+    inventoryPanel.querySelector('#btn-close-dashboard-x')?.addEventListener('click', () => {
+      this.toggleInventory(false);
     });
 
-    kiosk.querySelector('#btn-close-kiosk')?.addEventListener('click', () => {
-      this.closeKioskUI();
-    });
+    dashboard.appendChild(inventoryPanel);
+
+    // Отрисовываем сетку слотов в инвентаре
+    this.updateInventoryUI();
   }
-
-  private closeKioskUI(): void {
-    this.removeKioskUI();
-  }
-
-  // ───── Ларёк Шаурмы и Магазин Улучшений ─────
-
-  private openFoodCartUI(): void {
-    if (!this.nearFoodCartEntity) return;
-    this.toggleInventory(true); // Открываем рюкзак для наглядности веса
-
-    this.removeFoodCartUI();
-
-    const cart = document.createElement('div');
-    cart.id = 'game-food-cart-panel';
-    cart.style.position = 'fixed';
-    cart.style.right = '10%';
-    cart.style.top = '50%';
-    cart.style.transform = 'translateY(-50%)';
-    cart.style.background = 'rgba(15,15,15,0.92)';
-    cart.style.backdropFilter = 'blur(10px)';
-    cart.style.border = '3px solid #00ccff';
-    cart.style.borderRadius = '10px';
-    cart.style.padding = '20px';
-    cart.style.width = '320px';
-    cart.style.fontFamily = 'monospace';
-    cart.style.zIndex = '99999';
-    cart.style.boxShadow = '0 5px 25px rgba(0,0,0,0.7)';
-    cart.style.pointerEvents = 'auto';
-
-    document.body.appendChild(cart);
-    this.foodCartEl = cart;
-
-    this.updateFoodCartUI();
-  }
-
-  private updateFoodCartUI(): void {
-    if (!this.foodCartEl) return;
-
-    // В зависимости от текущего тира рюкзака, показываем доступные апгрейды
-    const upgradeText = this.backpackTier === 1 
-      ? `<button id="btn-upgrade-bag-2" style="width:100%; padding:12px; background: #00ccff; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:8px; font-family: monospace; border-radius:6px; transition: transform 0.1s;">👜 Купить Сумку Adidas ($15.00)</button>` 
-      : this.backpackTier === 2 
-      ? `<button id="btn-upgrade-bag-3" style="width:100%; padding:12px; background: #7cfc00; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:8px; font-family: monospace; border-radius:6px; transition: transform 0.1s;">🎒 Купить Рюкзак туриста ($45.00)</button>`
-      : `<div style="text-align:center; padding:8px; background:#333; color:#aaa; border-radius:4px; margin-bottom:8px;">У тебя максимальный Рюкзак!</div>`;
-
-    this.foodCartEl.innerHTML = `
-      <h3 style="margin-top:0; border-bottom:2px solid #00ccff; padding-bottom:6px; color:#00ccff; text-align:center; display:flex; align-items:center; justify-content:center; font-size:20px;">
-        🏪 ШАУРМА У АШОТА
-      </h3>
-      
-      <div style="margin-bottom:12px;">
-        <strong style="color:#ffd700; display:block; margin-bottom:4px;">🍕 ГОРЯЧЕЕ ПИТАНИЕ:</strong>
-        <button id="btn-buy-shawa" style="width:100%; padding:12px; background: #ffd700; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between; font-family: monospace; border-radius:6px;">
-          <span>🌯 Сытная Шаурма</span>
-          <span>$1.50</span>
-        </button>
-        <span style="font-size:11px; color:#ccc; display:block; margin-bottom:8px;">Восстанавливает 100% энергии + 20 сек бесконечного спринта!</span>
-
-        <button id="btn-buy-energy" style="width:100%; padding:12px; background: #ff6b6b; border:none; color:#fff; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; font-family: monospace; border-radius:6px;">
-          <span>⚡ Энергетик "Ягуар"</span>
-          <span>$3.00</span>
-        </button>
-        <span style="font-size:11px; color:#ccc; display:block;">Даёт безумную суперскорость бега на 30 секунд!</span>
-      </div>
-
-      <div style="margin-bottom:12px; border-top:1px solid #333; padding-top:10px;">
-        <strong style="color:#7cfc00; display:block; margin-bottom:6px;">🎒 УЛУЧШИТЬ СУМКУ:</strong>
-        ${upgradeText}
-        <span style="font-size:11px; color:#ccc; display:block;">Увеличение лимита веса: Пакет (8кг) ➔ Сумка (15кг) ➔ Рюкзак (30кг)</span>
-      </div>
-
-      <button id="btn-close-food" style="width:100%; padding:10px; background: #333; border: 1px solid #ff3333; color:#ff3333; font-weight:bold; cursor:pointer; margin-top:4px; font-family: monospace; border-radius:6px;">Выйти из ларька</button>
-    `;
-
-    // Слушатели кликов
-    this.foodCartEl.querySelector('#btn-buy-shawa')?.addEventListener('click', () => {
-      this.sendGameMessage({ type: 'buy-food', itemType: 'shawarma' });
-    });
-
-    this.foodCartEl.querySelector('#btn-buy-energy')?.addEventListener('click', () => {
-      this.sendGameMessage({ type: 'buy-food', itemType: 'energy' });
-    });
-
-    this.foodCartEl.querySelector('#btn-upgrade-bag-2')?.addEventListener('click', () => {
-      this.sendGameMessage({ type: 'upgrade-backpack', tier: 2 });
-    });
-
-    this.foodCartEl.querySelector('#btn-upgrade-bag-3')?.addEventListener('click', () => {
-      this.sendGameMessage({ type: 'upgrade-backpack', tier: 3 });
-    });
-
-    this.foodCartEl.querySelector('#btn-close-food')?.addEventListener('click', () => {
-      this.closeFoodCartUI();
-    });
-  }
-
-  private closeFoodCartUI(): void {
-    this.removeFoodCartUI();
-  }
-
-  private removeFoodCartUI(): void {
-    const existing = document.getElementById('game-food-cart-panel');
-    if (existing) existing.remove();
-    this.foodCartEl = undefined;
-  }
-
-  // ───── HUD ─────
 
   private updateHUDUI(): void {
     if (!this.hudOverlayEl) return;
@@ -1027,11 +1011,11 @@ export class WorldScene extends Phaser.Scene {
     const maxLimit = this.backpackTier === 1 ? 8.0 : this.backpackTier === 2 ? 15.0 : 30.0;
     const bagName = this.backpackTier === 1 ? 'Пакет' : this.backpackTier === 2 ? 'Сумка Adidas' : 'Рюкзак';
 
-    const moneyEl = this.hudOverlayEl.querySelector('#hud-money');
-    if (moneyEl) moneyEl.innerHTML = `🪙 $${this.localMoney.toFixed(2)}`;
+    const moneyVal = this.hudOverlayEl.querySelector('#hud-money-val');
+    if (moneyVal) moneyVal.textContent = this.localMoney.toFixed(2);
 
     const weightEl = this.hudOverlayEl.querySelector('#hud-weight');
-    if (weightEl) weightEl.innerHTML = `🎒 ${bagName} (${this.currentWeight.toFixed(1)} / ${maxLimit} кг)`;
+    if (weightEl) weightEl.innerHTML = `Сумка: <strong style="color:#fff;">${bagName}</strong> (${this.currentWeight.toFixed(1)} / ${maxLimit} кг)`;
 
     const weightBar = this.hudOverlayEl.querySelector('#hud-weight-bar') as HTMLDivElement;
     if (weightBar) {
@@ -1058,9 +1042,9 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private updateInventoryUI(): void {
-    if (!this.inventoryEl) return;
+    if (!this.dashboardPanelEl) return;
 
-    const grid = this.inventoryEl.querySelector('#inventory-grid');
+    const grid = this.dashboardPanelEl.querySelector('#inventory-grid');
     if (!grid) return;
 
     grid.innerHTML = '';
@@ -1111,7 +1095,7 @@ export class WorldScene extends Phaser.Scene {
     }
 
     const maxLimit = this.backpackTier === 1 ? 8.0 : this.backpackTier === 2 ? 15.0 : 30.0;
-    const weightStatus = this.inventoryEl.querySelector('#inv-weight-status');
+    const weightStatus = this.dashboardPanelEl.querySelector('#inv-weight-status');
     if (weightStatus) {
       weightStatus.textContent = `Вес: ${this.currentWeight.toFixed(1)} / ${maxLimit} кг`;
     }
@@ -1119,9 +1103,7 @@ export class WorldScene extends Phaser.Scene {
 
   private destroyHTMLOverlays(): void {
     this.removeHTMLHUD();
-    this.removeHTMLInventory();
-    this.removeKioskUI();
-    this.removeFoodCartUI();
+    this.removeDashboardPanel();
 
     const pulseStyle = document.getElementById('hud-pulse-style');
     if (pulseStyle) pulseStyle.remove();
@@ -1133,15 +1115,10 @@ export class WorldScene extends Phaser.Scene {
     this.hudOverlayEl = undefined;
   }
 
-  private removeHTMLInventory(): void {
-    const existing = document.getElementById('game-inventory-panel');
+  private removeDashboardPanel(): void {
+    const existing = document.getElementById('game-dashboard-container');
     if (existing) existing.remove();
-    this.inventoryEl = undefined;
-  }
-
-  private removeKioskUI(): void {
-    const existing = document.getElementById('game-kiosk-panel');
-    if (existing) existing.remove();
+    this.dashboardPanelEl = undefined;
   }
 
   private isPeerSnapshot(v: unknown): v is PeerSnapshot {
@@ -1173,13 +1150,12 @@ export class WorldScene extends Phaser.Scene {
   private ensureRemote(id: string, x: number, y: number): void {
     let rect = this.remotePlayers.get(id);
     if (!rect) {
-      const newSprite = this.add.sprite(x, y, 'player');
-      newSprite.setScale(0.85);
-      newSprite.setTint(REMOTE_TINT);
-      newSprite.setDepth(500);
-      this.remotePlayers.set(id, newSprite);
+      rect = this.add.sprite(x, y, 'player-sprites', 0);
+      rect.setScale(0.85);
+      rect.setTint(REMOTE_TINT);
+      rect.setDepth(500);
+      this.remotePlayers.set(id, rect);
       this.updateHUDUI();
-      rect = newSprite;
     }
     rect.x = x;
     rect.y = y;
