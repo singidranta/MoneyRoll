@@ -5,6 +5,8 @@
   "description": "2D онлайн-RPG про то, как стать богатым.",
   "scripts": {
     "dev": "concurrently -n SERVER,CLIENT -c blue,green \"pnpm --filter @moneyroll/server dev\" \"pnpm --filter @moneyroll/client dev\"",
+    "dev:editor": "concurrently -n SERVER,CLIENT -c blue,green \"pnpm --filter @moneyroll/server dev\" \"VITE_MR_MODE=editor pnpm --filter @moneyroll/client dev\"",
+    "dev:build": "concurrently -n SERVER,CLIENT -c blue,green \"pnpm --filter @moneyroll/server dev\" \"VITE_MR_MODE=editor pnpm --filter @moneyroll/client dev\"",
     "dev:server": "pnpm --filter @moneyroll/server dev",
     "dev:client": "pnpm --filter @moneyroll/client dev",
     "build": "pnpm -r run build",

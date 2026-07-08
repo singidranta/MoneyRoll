@@ -8,7 +8,7 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": "..",
     "declaration": false,
     "sourceMap": true,
     "noEmitOnError": true,
@@ -16,5 +16,5 @@
     "noUnusedParameters": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src"]
+  "include": ["src", "../shared"]
 }

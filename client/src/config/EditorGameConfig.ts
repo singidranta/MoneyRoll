@@ -1,0 +1,19 @@
+import Phaser from 'phaser';
+import { BootScene } from '../scenes/BootScene';
+import { EditorScene } from '../scenes/EditorScene';
+
+export const EditorGameConfig: Phaser.Types.Core.GameConfig = {
+  type: Phaser.AUTO,
+  backgroundColor: '#0a0a0a',
+  scale: {
+    mode: Phaser.Scale.RESIZE,
+    width: window.innerWidth,
+    height: window.innerHeight,
+  },
+  pixelArt: false,
+  fps: {
+    target: 60,
+    forceSetTimeOut: false,
+  },
+  scene: [BootScene, EditorScene],
+};

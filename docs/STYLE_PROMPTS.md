@@ -224,4 +224,61 @@ simple, minimalist, monochrome, transparent background, game UI icon style,
 golden coin with $ symbol in center, simple shape
 ```
 
-Каждый новый ассет — сначала сгенери 4-6 вариантов, выбери **лучший по стилю**, не по «красоте». Стилистическая согласованность важнее детализации.
+---
+
+## ⬛ Tile (тайлы карты)
+
+Используется в `EditorScene`: 200×200 клеточек, тайл 64×64 px. Тайлмножество — одна текстура, которая повторяется. В рисовке — **только один квадрант** от центра, остальное дорисует соседний тайл при тайлинге (не нужно рисовать все 4 стороны).
+
+### Универсальная база (для всех тайлов)
+
+```
+flat 2D game tile, top-down view, 64x64 pixel art tile,
+bold black outline 2px, solid colors only, no gradient,
+no shading, transparent background, centered, vector style,
+seamless tileable when repeated, single tile only
+```
+
+Negative:
+```
+photo, photorealistic, gradient, shading, watermark, signature,
+3d render, isometric perspective, blurry, low contrast,
+busy background, frame, border, perspective
+```
+
+### ✅ Ground tile — трава / земля
+
+```
+[UNIVERSAL], grass and dirt ground tile, top-down 2D game,
+flat green grass with small dirt patches and a few scattered pebbles,
+simple, repeating friendly texture, slight color variation
+```
+
+**Пример чистого файла:** `ground.png` → `client/public/assets/tiles/flat/ground.png`.
+
+### ✅ Road tile — асфальт / дорога
+
+```
+[UNIVERSAL], asphalt road tile, top-down 2D game,
+gray asphalt with one center dividing line (dashed yellow),
+slight weathering, no cars, no persons, empty road segment
+```
+
+**Пример чистого файла:** `road.png` → `client/public/assets/tiles/flat/road.png`.
+
+### Замена плейсхолдеров на AI-ассеты
+
+Когда AI-картинки готовы:
+1. Сохрани в `client/public/assets/tiles/flat/{ground,road}.png` (прозрачный фон, 64×64).
+2. В `client/src/systems/MapSystem.ts` замени `TILE_COLORS.ground` и `TILE_COLORS.road` —
+   поставь загрузку через `this.load.image(...)` и рендери через `add.tileSprite` или
+   `add.image` на каждую клетку. Текущий код использует цветные rect’ы — placeholder,
+   нормально для прототипа.
+
+### Чеклист для тайлов
+
+- [ ] Размер 64×64 строго.
+- [ ] Прозрачный фон (или фон одного цвета — под тайлинг всё равно).
+- [ ] Углы без чёрной обводки в местах стыка (иначе видна сетка при тайлинге).
+- [ ] Контрастность достаточная даже при dimming под зданиями.
+

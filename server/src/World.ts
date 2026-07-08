@@ -73,8 +73,13 @@ export class World {
   /** Broadcast ВСЕМ клиентам (например, leave при дисконнекте). */
   broadcastAll(payload: object): void {
     const json = JSON.stringify(payload);
+    this.broadcastAllRaw(json);
+  }
+
+  /** Прямая отправка уже сериализованного JSON всем клиентам (без JSON.stringify). */
+  broadcastAllRaw(jsonString: string): void {
     for (const c of this.clients.values()) {
-      if (c.ws.readyState === c.ws.OPEN) c.ws.send(json);
+      if (c.ws.readyState === c.ws.OPEN) c.ws.send(jsonString);
     }
   }
 }

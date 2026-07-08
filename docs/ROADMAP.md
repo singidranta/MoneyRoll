@@ -158,4 +158,21 @@ MoneyRoll/
 
 ## Текущий статус
 
-🎯 **Этап 0 в работе.** Скаффолд проекта создан, типы проверены.
+✅ **Этап 0:** скаффолд проекта — Vite + Phaser + Express/ws, мультиплеер, ремоут-интерполяция 20Hz.
+✅ **Этап "карта":** редактор с JSON-сохранением на сервере, ground + road, цикл на клик.
+✅ **Radmin VPN:** сервер и Vite слушают `0.0.0.0`, IP-адреса в консоли и HUD.
+🚧 **Этап 1:** реальные спрайты игроков — по 1 из каждого paper-doll слоя.
+
+### Сетевая модель
+
+- WebSocket на `/ws`, проксируется Vite.
+- Welcome: `{type:'welcome', id, players:[{id,x,y}]}` — текущие игроки.
+- Snapshot tick: 20Hz, `{type:'snapshot', t, players:[...]}` — клиент интерполирует.
+- Welcome повторяется при reconnect — буфер интерполяции клиент очищает.
+- `peer-join` / `leave` — для синхронизации событий подключения/отключения.
+
+### Карта
+
+- Карта — `MapDocument` (version=1), хранится в `server/data/map.json`.
+- Эндпоинты: `GET /api/map`, `PUT /api/map`, `GET /api/network`.
+- Tile types: `ground`, `road`. Цикл при клике в редакторе. Расширение — новый тип → задать в `shared/map.ts: TILE_TYPES`, добавить цвет в `MapSystem.TILE_COLORS`.

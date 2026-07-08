@@ -4,16 +4,17 @@ import path from 'node:path';
 export default defineConfig({
   root: '.',
   server: {
+    host: true, // слушаем на 0.0.0.0 — важно для Radmin VPN / LAN-доступа друзей
     port: 5173,
     strictPort: false,
     proxy: {
-      // WebSocket-прокси на сервер (Stage 0 нужен для неткода)
+      // WebSocket-прокси на сервер (нужно для неткода)
       '/ws': {
         target: 'ws://localhost:3000',
         ws: true,
         changeOrigin: true,
       },
-      // REST-прокси для будущего API
+      // REST-прокси для /api/map и /api/network
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,

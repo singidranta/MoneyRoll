@@ -16,6 +16,9 @@ client/.vite/
 # Generated assets (later, when AI pipe is in place)
 client/public/assets/generated/
 
+# Server runtime data (map.json, etc.)
+data/
+
 # Cache
 .cache/
 .turbo/
