@@ -18,6 +18,11 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.scene.start('World');
+    const isEditor = new URL(window.location.href).searchParams.get('mode') === 'editor';
+    if (isEditor) {
+      this.scene.start('Editor');
+    } else {
+      this.scene.start('World');
+    }
   }
 }

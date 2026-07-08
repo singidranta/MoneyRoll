@@ -1,4 +1,4 @@
-import type { MapDocument, TileType } from '../../../shared/map';
+import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, type MapDocument, type TileType } from '../../../shared/map';
 
 const ENDPOINT = '/api/map';
 
@@ -25,10 +25,11 @@ export async function loadMap(): Promise<MapDocument> {
     console.warn('[MoneyRoll][map] failed to load, empty:', err);
     return {
       version: 1,
-      width: 200,
-      height: 200,
-      tileSize: 64,
+      width: MAP_WIDTH,
+      height: MAP_HEIGHT,
+      tileSize: TILE_SIZE,
       tiles: {},
+      rotations: {},
     };
   }
 }

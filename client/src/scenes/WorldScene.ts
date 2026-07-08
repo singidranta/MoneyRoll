@@ -2,10 +2,10 @@ import Phaser from 'phaser';
 import { connectNetcode, type NetcodeClient, type NetcodeMessage } from '../systems/Netcode';
 import { loadMap } from '../systems/MapSystem';
 import { BOTTLE_TYPES, type BottleType, type ServerBottle, type ServerKiosk } from '../../../shared/economy';
-import type { MapDocument } from '../../../shared/map';
+import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, type MapDocument } from '../../../shared/map';
 
-const MAP_PIXEL_W = 12800;   // 200 * 64
-const MAP_PIXEL_H = 12800;
+const MAP_PIXEL_W = MAP_WIDTH * TILE_SIZE; // 30 * 128 = 3840
+const MAP_PIXEL_H = MAP_HEIGHT * TILE_SIZE;
 const MOVE_SPEED = 220;
 const SEND_INTERVAL_MS = 50;
 const SNAPSHOT_INTERP_DELAY_MS = 100;  // буфер для сглаживания
@@ -197,7 +197,12 @@ export class WorldScene extends Phaser.Scene {
         const x = Number(parts[0]);
         const y = Number(parts[1]);
         if (Number.isInteger(x) && Number.isInteger(y)) {
-          this.add.image(x * 64, y * 64, 'tile-road').setOrigin(0, 0).setDepth(1);
+          const rotation = this.mapJson.rotations?.[key] ?? 0;
+          const px = x * TILE_SIZE + TILE_SIZE / 2;
+          const py = y * TILE_SIZE + TILE_SIZE / 2;
+          const img = this.add.image(px, py, 'tile-road');
+          img.setDepth(1);
+          img.setAngle(rotation);
         }
       }
     }

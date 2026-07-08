@@ -61,7 +61,14 @@ async function loadMap(): Promise<MapDocument> {
       if (pos.y < 0 || pos.y >= parsed.height) continue;
       tiles[k] = t;
     }
-    return { ...parsed, tiles, version: 1 };
+    const rotations: Record<string, number> = {};
+    for (const [k, r] of Object.entries(parsed.rotations ?? {})) {
+      const pos = parseKey(k);
+      if (!pos) continue;
+      if (typeof r !== 'number') continue;
+      rotations[k] = r;
+    }
+    return { ...parsed, tiles, rotations, version: 1 };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
@@ -133,7 +140,14 @@ app.put('/api/map', async (req, res) => {
     if (t !== 'ground' && t !== 'road') continue;
     tiles[k] = t;
   }
-  currentMap = { ...body, tiles, version: 1 };
+  const rotations: Record<string, number> = {};
+  for (const [k, r] of Object.entries(body.rotations ?? {})) {
+    const pos = parseKey(k);
+    if (!pos) continue;
+    if (typeof r !== 'number') continue;
+    rotations[k] = r;
+  }
+  currentMap = { ...body, tiles, rotations, version: 1 };
   mapDirty = true;
   await flushMap();
   res.json({ ok: true, tiles: Object.keys(tiles).length });

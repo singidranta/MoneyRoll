@@ -4,9 +4,9 @@
  */
 
 export const MAP_VERSION = 1;
-export const MAP_WIDTH = 200;
-export const MAP_HEIGHT = 200;
-export const TILE_SIZE = 64;
+export const MAP_WIDTH = 30; // Карта мира 30х30 клеток
+export const MAP_HEIGHT = 30;
+export const TILE_SIZE = 128; // Тайлы 128х128 пикселей
 export const TILE_TYPES = ['ground', 'road'] as const;
 
 export type TileType = (typeof TILE_TYPES)[number];
@@ -15,7 +15,7 @@ export type CellPos = { x: number; y: number };
 
 /**
  * Хранилище карты: разреженный словарь. Ключ — "x,y".
- * Сейчас {ground, road} — потом добавим здания, NPC и т.д.
+ * Поддерживает вращение в градусах (0, 90, 180, 270).
  */
 export type MapDocument = {
   version: number;
@@ -23,6 +23,7 @@ export type MapDocument = {
   height: number;
   tileSize: number;
   tiles: Record<string, TileType>;
+  rotations?: Record<string, number>; // вращение в градусах
 };
 
 export function cellKey(x: number, y: number): string {
@@ -45,6 +46,7 @@ export function emptyMap(): MapDocument {
     height: MAP_HEIGHT,
     tileSize: TILE_SIZE,
     tiles: {},
+    rotations: {},
   };
 }
 
