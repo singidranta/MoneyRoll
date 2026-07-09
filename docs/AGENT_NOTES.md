@@ -7,7 +7,7 @@
 ## Project identity
 
 - **Name:** MoneyRoll
-- **Current version:** `1.4`
+- **Current version:** `1.5`
 - **Repo branch for this session:** `arena/019f46be-moneyroll`
 - **Stack:** Vite + TypeScript + Phaser 3 (client), Node.js + Express + `ws` (server), pnpm workspaces.
 

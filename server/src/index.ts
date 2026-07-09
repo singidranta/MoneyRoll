@@ -132,7 +132,7 @@ app.use(cors());
 app.use(express.json({ limit: '4mb' }));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, uptime: process.uptime(), clients: world.size, version: '1.4' });
+  res.json({ ok: true, uptime: process.uptime(), clients: world.size, version: '1.5' });
 });
 
 app.get('/api/network', (_req, res) => {

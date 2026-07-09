@@ -183,6 +183,9 @@ export class WorldScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#0a0a0a');
     this.cameras.main.setBounds(0, 0, MAP_PIXEL_W, MAP_PIXEL_H);
 
+    // ---------- World bounds for physics ----------
+    this.physics.world.setBounds(0, 0, MAP_PIXEL_W, MAP_PIXEL_H);
+
     // ---------- Netcode ----------
     this.netcode = connectNetcode((msg) => this.handleServerMessage(msg));
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -800,10 +803,7 @@ export class WorldScene extends Phaser.Scene {
       }
     } else {
       this.usePrompt.setVisible(false);
-      // Авто-закрытие Dashboard при отдалении от магазинов
-      if (this.isInventoryOpen && (this.nearKioskId === null && this.nearFoodCartEntity === null && this.nearClothingShopEntity === null)) {
-        this.toggleInventory(false);
-      }
+      // Inventory stays open even when walking away from shops
     }
 
     this.renderRemoteInterpolated(now);
@@ -831,6 +831,8 @@ export class WorldScene extends Phaser.Scene {
   //  SECTION: HTML UI OVERLAYS
   // ============================================================
 
+
+
   private createHTMLHUD(): void {
     this.removeHTMLHUD();
 
@@ -839,78 +841,31 @@ export class WorldScene extends Phaser.Scene {
     document.body.appendChild(hud);
     this.hudOverlayEl = hud;
 
-    // 1. БАЛАНС: Сверху Справа (только деньги!)
+    // 1. Balance panel (top-right)
     const moneyPanel = document.createElement('div');
     moneyPanel.id = 'hud-money-panel';
-    moneyPanel.style.position = 'fixed';
-    moneyPanel.style.right = '16px';
-    moneyPanel.style.top = '16px';
-    moneyPanel.style.background = 'rgba(15,15,15,0.92)';
-    moneyPanel.style.backdropFilter = 'blur(10px)';
-    moneyPanel.style.color = '#ffd700';
-    moneyPanel.style.border = '3px solid #ffd700';
-    moneyPanel.style.borderRadius = '10px';
-    moneyPanel.style.padding = '12px 20px';
-    moneyPanel.style.fontFamily = 'monospace';
-    moneyPanel.style.fontSize = '24px';
-    moneyPanel.style.fontWeight = 'bold';
-    moneyPanel.style.boxShadow = '0 5px 25px rgba(0,0,0,0.6)';
-    moneyPanel.style.zIndex = '9999';
     moneyPanel.innerHTML = `🪙 $<span id="hud-money-val">5.00</span>`;
     hud.appendChild(moneyPanel);
 
-    // 2. ВЕС И ЭНЕРГИЯ: Слева Снизу
+    // 2. Weight & stamina panel (bottom-left)
     const statsPanel = document.createElement('div');
     statsPanel.id = 'hud-stats-panel';
-    statsPanel.style.position = 'fixed';
-    statsPanel.style.left = '16px';
-    statsPanel.style.bottom = '16px';
-    statsPanel.style.background = 'rgba(15,15,15,0.92)';
-    statsPanel.style.backdropFilter = 'blur(10px)';
-    statsPanel.style.color = '#ffffff';
-    statsPanel.style.border = '3px solid #7cfc00';
-    statsPanel.style.borderRadius = '10px';
-    statsPanel.style.padding = '14px 20px';
-    statsPanel.style.fontFamily = 'monospace';
-    statsPanel.style.fontSize = '15px';
-    statsPanel.style.boxShadow = '0 5px 25px rgba(0,0,0,0.6)';
-    statsPanel.style.zIndex = '9999';
-    statsPanel.style.width = '260px';
     statsPanel.innerHTML = `
-      <div id="hud-weight" style="font-weight:bold; margin-bottom:6px;">🎒 Пакет (0.0 / 8.0 кг)</div>
-      <div style="width: 100%; background: #333; height: 6px; border-radius: 3px; overflow:hidden; border:1px solid #555; margin-bottom:10px;">
-        <div id="hud-weight-bar" style="background:#7cfc00; width:0%; height:100%; transition: width 0.2s;"></div>
+      <div id="hud-weight">🎒 Пакет (0.0 / 8.0 кг)</div>
+      <div class="hud-bar">
+        <div id="hud-weight-bar" class="hud-bar-fill" style="width:0%; background:#7cfc00;"></div>
       </div>
       <div style="font-size:12px; color:#aaa; margin-bottom:4px;">⚡ Энергия (Shift):</div>
-      <div style="width: 100%; background: #333; height: 10px; border-radius: 5px; overflow:hidden; border:1px solid #555;">
-        <div id="hud-stamina-bar" style="background:#ffd700; width:100%; height:100%; transition: width 0.1s;"></div>
+      <div class="hud-bar" style="height:10px; border-radius:5px;">
+        <div id="hud-stamina-bar" class="hud-bar-fill" style="width:100%; background:#ffd700; border-radius:5px;"></div>
       </div>
     `;
     hud.appendChild(statsPanel);
 
-    // 3. ИКОНКА РЮКЗАКА: Справа Снизу (круглая кнопка)
+    // 3. Backpack toggle button (bottom-right)
     const btnBackpack = document.createElement('button');
     btnBackpack.id = 'btn-toggle-backpack';
-    btnBackpack.style.position = 'fixed';
-    btnBackpack.style.right = '16px';
-    btnBackpack.style.bottom = '16px';
-    btnBackpack.style.width = '64px';
-    btnBackpack.style.height = '64px';
-    btnBackpack.style.background = '#7cfc00';
-    btnBackpack.style.border = 'none';
-    btnBackpack.style.borderRadius = '50%';
-    btnBackpack.style.cursor = 'pointer';
-    btnBackpack.style.fontSize = '32px';
-    btnBackpack.style.display = 'flex';
-    btnBackpack.style.alignItems = 'center';
-    btnBackpack.style.justifyContent = 'center';
-    btnBackpack.style.boxShadow = '0 5px 20px rgba(0,0,0,0.6)';
-    btnBackpack.style.zIndex = '9999';
-    btnBackpack.style.transition = 'transform 0.1s';
     btnBackpack.innerHTML = '🎒';
-
-    btnBackpack.addEventListener('mouseenter', () => btnBackpack.style.transform = 'scale(1.1)');
-    btnBackpack.addEventListener('mouseleave', () => btnBackpack.style.transform = 'scale(1.0)');
     btnBackpack.addEventListener('click', () => this.toggleInventory());
     hud.appendChild(btnBackpack);
   }
@@ -922,7 +877,8 @@ export class WorldScene extends Phaser.Scene {
 
   /**
    * ЕДИНЫЙ ДАШБОРД (Dashboard):
-   * Объединяет все окна в единый сочный side-by-side splitscreen!
+   * Объединяет окно действия (если рядом магазин) и инвентарь.
+   * Инвентарь теперь можно открыть в любой точке мира.
    */
   private updateDashboard(): void {
     this.removeDashboardPanel();
@@ -931,220 +887,159 @@ export class WorldScene extends Phaser.Scene {
 
     const dashboard = document.createElement('div');
     dashboard.id = 'game-dashboard-container';
-    dashboard.style.position = 'fixed';
-    dashboard.style.left = '50%';
-    dashboard.style.top = '50%';
-    dashboard.style.transform = 'translate(-50%, -50%)';
-    dashboard.style.display = 'flex';
-    dashboard.style.gap = '24px';
-    dashboard.style.zIndex = '99999';
-    dashboard.style.pointerEvents = 'auto';
-
     document.body.appendChild(dashboard);
     this.dashboardPanelEl = dashboard;
 
-    // 1. ЛЕВАЯ ПАНЕЛЬ: Действие (Автомат, Ларёк шаурмы или Магазин одежды!)
+    // Left action panel (only when near a shop/kiosk)
     if (this.nearKioskId) {
-      const kioskPanel = document.createElement('div');
-      kioskPanel.style.background = 'rgba(15,15,15,0.92)';
-      kioskPanel.style.backdropFilter = 'blur(10px)';
-      kioskPanel.style.border = '3px solid #ffd700';
-      kioskPanel.style.borderRadius = '10px';
-      kioskPanel.style.padding = '20px';
-      kioskPanel.style.width = '320px';
-      kioskPanel.style.fontFamily = 'monospace';
-      kioskPanel.style.boxShadow = '0 5px 25px rgba(0,0,0,0.7)';
-      kioskPanel.style.color = '#fff';
-
-      kioskPanel.innerHTML = `
-        <h3 style="margin-top:0; border-bottom:2px solid #ffd700; padding-bottom:8px; color:#ffd700; text-align:center; font-size:20px;">🏪 АВТОМАТ СДАЧИ</h3>
-        <p style="font-size:14px; color:#ccc; line-height:1.5; margin-bottom:14px; text-align:center;">
-          Сдавай стеклотару в автомат! Кликни по бутылке в рюкзаке справа для поштучной сдачи, или сдай всё:
-        </p>
-        <button id="btn-recycle-all" style="width:100%; padding:12px; background:#ffd700; border:none; color:#000; font-weight:bold; cursor:pointer; font-size:15px; border-radius:6px; font-family:monospace; transition: transform 0.1s;">♻️ СДАТЬ ВСЕ БУТЫЛКИ</button>
-        <button id="btn-close-dashboard" style="width:100%; padding:10px; background:#333; border:1px solid #ff3333; color:#ff3333; font-weight:bold; cursor:pointer; border-radius:6px; margin-top:8px; font-family:monospace;">Закрыть</button>
-      `;
-
-      kioskPanel.querySelector('#btn-recycle-all')?.addEventListener('click', () => {
-        this.sendGameMessage({ type: 'sell-all-bottles' });
-      });
-      kioskPanel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => {
-        this.toggleInventory(false);
-      });
-
-      dashboard.appendChild(kioskPanel);
-
+      dashboard.appendChild(this.createKioskPanel());
     } else if (this.nearFoodCartEntity) {
-      const foodPanel = document.createElement('div');
-      foodPanel.style.background = 'rgba(15,15,15,0.92)';
-      foodPanel.style.backdropFilter = 'blur(10px)';
-      foodPanel.style.border = '3px solid #ff9900';
-      foodPanel.style.borderRadius = '10px';
-      foodPanel.style.padding = '20px';
-      foodPanel.style.width = '320px';
-      foodPanel.style.fontFamily = 'monospace';
-      foodPanel.style.boxShadow = '0 5px 25px rgba(0,0,0,0.7)';
-      foodPanel.style.color = '#fff';
-
-      // Теперь в Ларьке Шаурмы продается только Еда (Шаурма и Ягуар), которая ложится в Инвентарь как предметы!
-      foodPanel.innerHTML = `
-        <h3 style="margin-top:0; border-bottom:2px solid #ff9900; padding-bottom:6px; color:#ff9900; text-align:center; font-size:20px;">🌯 ЛАРЁК У АШОТА</h3>
-        
-        <div style="margin-bottom:12px;">
-          <strong style="color:#ffd700; display:block; margin-bottom:4px;">🍕 ПИТАНИЕ (В инвентарь):</strong>
-          
-          <button id="btn-buy-shawa" style="width:100%; padding:12px; background:#ffd700; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between; font-family:monospace; border-radius:6px;">
-            <span>🌯 Сытная Шаурма</span>
-            <span>$1.50</span>
-          </button>
-          
-          <button id="btn-buy-energy" style="width:100%; padding:12px; background:#ff6b6b; border:none; color:#fff; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; font-family:monospace; border-radius:6px;">
-            <span>⚡ Энергетик "Ягуар"</span>
-            <span>$3.00</span>
-          </button>
-        </div>
-
-        <p style="font-size:11px; color:#ccc; line-height:1.4; margin-top:8px; text-align:center;">
-          Купленная еда пакуется в твой инвентарь справа. Кликни на неё в инвентаре, чтобы съесть/выпить!
-        </p>
-
-        <button id="btn-close-dashboard" style="width:100%; padding:10px; background:#333; border:1px solid #ff3333; color:#ff3333; font-weight:bold; cursor:pointer; border-radius:6px; font-family:monospace; margin-top:10px;">Закрыть</button>
-      `;
-
-      foodPanel.querySelector('#btn-buy-shawa')?.addEventListener('click', () => {
-        this.buyItemToInventory('shawarma', 1.50);
-      });
-      foodPanel.querySelector('#btn-buy-energy')?.addEventListener('click', () => {
-        this.buyItemToInventory('energy', 3.00);
-      });
-      foodPanel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => {
-        this.toggleInventory(false);
-      });
-
-      dashboard.appendChild(foodPanel);
-
+      dashboard.appendChild(this.createFoodPanel());
     } else if (this.nearClothingShopEntity) {
-      // 👗 НОВЫЙ МАГАЗИН ОДЕЖДЫ И СУМОК!
-      const clothingPanel = document.createElement('div');
-      clothingPanel.style.background = 'rgba(15,15,15,0.92)';
-      clothingPanel.style.backdropFilter = 'blur(10px)';
-      clothingPanel.style.border = '3px solid #00ccff';
-      clothingPanel.style.borderRadius = '10px';
-      clothingPanel.style.padding = '20px';
-      clothingPanel.style.width = '330px';
-      clothingPanel.style.fontFamily = 'monospace';
-      clothingPanel.style.boxShadow = '0 5px 25px rgba(0,0,0,0.7)';
-      clothingPanel.style.color = '#fff';
-
-      clothingPanel.innerHTML = `
-        <h3 style="margin-top:0; border-bottom:2px solid #00ccff; padding-bottom:6px; color:#00ccff; text-align:center; font-size:20px;">👕 МАГАЗИН ОДЕЖДЫ</h3>
-        
-        <div style="margin-bottom:12px;">
-          <strong style="color:#00ccff; display:block; margin-bottom:4px;">👜 СУМКИ (Купи и экипируй!):</strong>
-          <button id="btn-buy-bag-adidas" style="width:100%; padding:10px; background:#00ccff; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between; border-radius:6px; font-family:monospace;">
-            <span>👜 Сумка Adidas (15кг)</span>
-            <span>$15.00</span>
-          </button>
-          <button id="btn-buy-backpack-tourist" style="width:100%; padding:10px; background:#7cfc00; border:none; color:#000; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; border-radius:6px; font-family:monospace;">
-            <span>🎒 Рюкзак туриста (30кг)</span>
-            <span>$45.00</span>
-          </button>
-        </div>
-
-        <div style="margin-bottom:12px; border-top:1px solid #333; padding-top:10px;">
-          <strong style="color:#ffd700; display:block; margin-bottom:4px;">👕 ЭКИПИРОВКА:</strong>
-          <button id="btn-buy-jacket" style="width:100%; padding:10px; background:#ffd700; border:none; color:#000; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between; border-radius:6px; font-family:monospace;">
-            <span>👕 Свитшот Adidas (+реген)</span>
-            <span>$10.00</span>
-          </button>
-          <button id="btn-buy-sneakers" style="width:100%; padding:10px; background:#ff6b6b; border:none; color:#fff; font-weight:bold; cursor:pointer; margin-bottom:6px; display:flex; justify-content:space-between; border-radius:6px; font-family:monospace;">
-            <span>👟 Кроссовки Nike (+скорость)</span>
-            <span>$20.00</span>
-          </button>
-          <button id="btn-buy-crown" style="width:100%; padding:10px; background:#ea00ff; border:none; color:#fff; font-weight:bold; cursor:pointer; display:flex; justify-content:space-between; border-radius:6px; font-family:monospace;">
-            <span>👑 Королевская Корона</span>
-            <span>$100.00</span>
-          </button>
-        </div>
-
-        <button id="btn-close-dashboard" style="width:100%; padding:10px; background:#333; border:1px solid #ff3333; color:#ff3333; font-weight:bold; cursor:pointer; border-radius:6px; font-family:monospace;">Закрыть</button>
-      `;
-
-      clothingPanel.querySelector('#btn-buy-bag-adidas')?.addEventListener('click', () => {
-        this.buyItemToInventory('bag-adidas', 15.00);
-      });
-      clothingPanel.querySelector('#btn-buy-backpack-tourist')?.addEventListener('click', () => {
-        this.buyItemToInventory('backpack-tourist', 45.00);
-      });
-      clothingPanel.querySelector('#btn-buy-jacket')?.addEventListener('click', () => {
-        this.buyClothingItem('jacket', 10.00);
-      });
-      clothingPanel.querySelector('#btn-buy-sneakers')?.addEventListener('click', () => {
-        this.buyClothingItem('sneakers', 20.00);
-      });
-      clothingPanel.querySelector('#btn-buy-crown')?.addEventListener('click', () => {
-        this.buyClothingItem('crown', 100.00);
-      });
-      clothingPanel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => {
-        this.toggleInventory(false);
-      });
-
-      dashboard.appendChild(clothingPanel);
+      dashboard.appendChild(this.createClothingPanel());
     }
 
-    // 2. ПРАВАЯ ПАНЕЛЬ: Рюкзак (Инвентарь 3х4 слота + специальный СЛОТ ПОД СУМКУ!)
-    const inventoryPanel = document.createElement('div');
-    inventoryPanel.id = 'dashboard-inventory-panel';
-    inventoryPanel.style.background = 'rgba(15,15,15,0.92)';
-    inventoryPanel.style.backdropFilter = 'blur(10px)';
-    inventoryPanel.style.border = '3px solid #7cfc00';
-    inventoryPanel.style.borderRadius = '10px';
-    inventoryPanel.style.padding = '25px';
-    inventoryPanel.style.fontFamily = 'monospace';
-    inventoryPanel.style.boxShadow = '0 8px 30px rgba(0,0,0,0.85)';
-    inventoryPanel.style.color = '#fff';
+    // Right inventory panel
+    const inventoryPanel = this.createInventoryPanel();
+    dashboard.appendChild(inventoryPanel);
 
-    inventoryPanel.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:2px solid #333; padding-bottom:10px;">
-        <span style="font-weight:bold; font-size:22px; color:#7cfc00; letter-spacing:1px;">🎒 МОЙ РЮКЗАК</span>
-        <button id="btn-close-dashboard-x" style="background:none; border:none; color:#ff4444; font-weight:bold; cursor:pointer; font-size:24px;">[X]</button>
+    const equipSlot = inventoryPanel.querySelector('#equip-bag-slot') as HTMLDivElement;
+    equipSlot.addEventListener('click', () => this.unequipBag());
+
+    this.updateInventoryUI();
+  }
+
+  private createKioskPanel(): HTMLDivElement {
+    const panel = document.createElement('div');
+    panel.className = 'dashboard-panel kiosk';
+    panel.innerHTML = `
+      <h3>🏪 АВТОМАТ СДАЧИ</h3>
+      <p style="font-size:14px; color:#ccc; line-height:1.5; margin-bottom:16px; text-align:center;">
+        Сдавай стеклотару. Кликни по бутылке в инвентаре справа для поштучной сдачи или сдай всё сразу:
+      </p>
+      <button id="btn-recycle-all" class="dash-btn dash-btn-primary">♻️ СДАТЬ ВСЕ БУТЫЛКИ</button>
+      <button id="btn-close-dashboard" class="dash-btn dash-btn-danger">Закрыть</button>
+    `;
+    panel.querySelector('#btn-recycle-all')?.addEventListener('click', () => {
+      this.sendGameMessage({ type: 'sell-all-bottles' });
+    });
+    panel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => {
+      this.toggleInventory(false);
+    });
+    return panel;
+  }
+
+  private createFoodPanel(): HTMLDivElement {
+    const panel = document.createElement('div');
+    panel.className = 'dashboard-panel food';
+    panel.innerHTML = `
+      <h3>🌯 ЛАРЁК У АШОТА</h3>
+      <div class="dash-category">🍕 ПИТАНИЕ (в инвентарь)</div>
+      <button id="btn-buy-shawa" class="dash-btn dash-btn-buy">
+        <span>🌯 Сытная Шаурма</span>
+        <span>$1.50</span>
+      </button>
+      <button id="btn-buy-energy" class="dash-btn dash-btn-buy">
+        <span>⚡ Энергетик "Ягуар"</span>
+        <span>$3.00</span>
+      </button>
+      <p style="font-size:11px; color:#ccc; line-height:1.4; margin:10px 0; text-align:center;">
+        Купленная еда падает в инвентарь. Кликни на неё, чтобы съесть/выпить.
+      </p>
+      <button id="btn-close-dashboard" class="dash-btn dash-btn-danger">Закрыть</button>
+    `;
+    panel.querySelector('#btn-buy-shawa')?.addEventListener('click', () => {
+      this.buyItemToInventory('shawarma', 1.50);
+    });
+    panel.querySelector('#btn-buy-energy')?.addEventListener('click', () => {
+      this.buyItemToInventory('energy', 3.00);
+    });
+    panel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => {
+      this.toggleInventory(false);
+    });
+    return panel;
+  }
+
+  private createClothingPanel(): HTMLDivElement {
+    const panel = document.createElement('div');
+    panel.className = 'dashboard-panel clothing';
+    panel.innerHTML = `
+      <h3>👕 МАГАЗИН ОДЕЖДЫ</h3>
+      <div class="dash-category">👜 СУМКИ</div>
+      <button id="btn-buy-bag-adidas" class="dash-btn dash-btn-buy">
+        <span>👜 Сумка Adidas (15кг)</span>
+        <span>$15.00</span>
+      </button>
+      <button id="btn-buy-backpack-tourist" class="dash-btn dash-btn-buy">
+        <span>🎒 Рюкзак туриста (30кг)</span>
+        <span>$45.00</span>
+      </button>
+      <div class="dash-category" style="margin-top:12px;">👕 ЭКИПИРОВКА</div>
+      <button id="btn-buy-jacket" class="dash-btn dash-btn-buy">
+        <span>👕 Свитшот Adidas (+реген)</span>
+        <span>$10.00</span>
+      </button>
+      <button id="btn-buy-sneakers" class="dash-btn dash-btn-buy">
+        <span>👟 Кроссовки Nike (+скорость)</span>
+        <span>$20.00</span>
+      </button>
+      <button id="btn-buy-crown" class="dash-btn dash-btn-buy">
+        <span>👑 Королевская Корона</span>
+        <span>$100.00</span>
+      </button>
+      <button id="btn-close-dashboard" class="dash-btn dash-btn-danger" style="margin-top:10px;">Закрыть</button>
+    `;
+    panel.querySelector('#btn-buy-bag-adidas')?.addEventListener('click', () => {
+      this.buyItemToInventory('bag-adidas', 15.00);
+    });
+    panel.querySelector('#btn-buy-backpack-tourist')?.addEventListener('click', () => {
+      this.buyItemToInventory('backpack-tourist', 45.00);
+    });
+    panel.querySelector('#btn-buy-jacket')?.addEventListener('click', () => {
+      this.buyClothingItem('jacket', 10.00);
+    });
+    panel.querySelector('#btn-buy-sneakers')?.addEventListener('click', () => {
+      this.buyClothingItem('sneakers', 20.00);
+    });
+    panel.querySelector('#btn-buy-crown')?.addEventListener('click', () => {
+      this.buyClothingItem('crown', 100.00);
+    });
+    panel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => {
+      this.toggleInventory(false);
+    });
+    return panel;
+  }
+
+  private createInventoryPanel(): HTMLDivElement {
+    const panel = document.createElement('div');
+    panel.id = 'dashboard-inventory-panel';
+    panel.className = 'dashboard-panel';
+    panel.innerHTML = `
+      <div class="inventory-header">
+        <span class="inventory-title">🎒 МОЙ РЮКЗАК</span>
+        <button id="btn-close-dashboard-x" class="dash-btn-close">[X]</button>
       </div>
-
-      <!-- Специальный блок СЛОТА ДЛЯ ЭКИПИРОВАНИЯ СУМКИ -->
-      <div style="display:flex; align-items:center; gap:16px; background:rgba(255,255,255,0.04); padding:10px; border-radius:8px; margin-bottom:16px; border:1px solid #555;">
-        <div id="equip-bag-slot" style="width:72px; height:72px; background:rgba(25,25,25,0.85); border:2px dashed #7cfc00; border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer; position:relative; image-rendering:pixelated;">
-          <!-- Сюда вставляется экипированная сумка -->
+      <div class="bag-slot-row">
+        <div id="equip-bag-slot" class="bag-slot empty">
+          <!-- equipped bag icon goes here -->
         </div>
         <div style="font-size:12px; line-height:1.4;">
           <strong style="color:#7cfc00; display:block;">СЛОТ ДЛЯ СУМКИ</strong>
-          <span id="equip-bag-desc" style="color:#aaa;">Без сумки (доступно только 4 слота кармана)</span>
+          <span id="equip-bag-desc" style="color:#aaa;">Без сумки (доступно только 4 кармана)</span>
         </div>
       </div>
-      
-      <div id="inventory-grid" style="display:grid; grid-template-columns: repeat(4, 96px); grid-template-rows: repeat(3, 96px); gap: 12px; margin-bottom:16px;">
-        <!-- Сюда вставляются слоты -->
+      <div id="inventory-grid">
+        <!-- slots go here -->
       </div>
-      
-      <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px; color:#ccc;">
+      <div class="dashboard-footer">
         <span id="inv-guide-text">Сдача бутылок кликом в автомате</span>
         <span id="inv-weight-status">Вес: 0.0 / ${BACKPACK_TIERS[1].maxWeight} кг</span>
       </div>
     `;
-
-    inventoryPanel.querySelector('#btn-close-dashboard-x')?.addEventListener('click', () => {
+    panel.querySelector('#btn-close-dashboard-x')?.addEventListener('click', () => {
       this.toggleInventory(false);
     });
-
-    dashboard.appendChild(inventoryPanel);
-
-    // Добавляем логику клика на слот экипировки для снятия сумки!
-    const equipSlot = inventoryPanel.querySelector('#equip-bag-slot') as HTMLDivElement;
-    equipSlot.addEventListener('click', () => {
-      this.unequipBag();
-    });
-
-    // Отрисовываем сетку слотов и обновляем слот экипировки
-    this.updateInventoryUI();
+    return panel;
   }
 
   /** Покупка расходников или сумок в инвентарь */
@@ -1335,21 +1230,20 @@ export class WorldScene extends Phaser.Scene {
 
     grid.innerHTML = '';
 
-    // Обновляем отображение слота экипировки сумки!
+    // Update equipped bag slot
     const equipSlot = this.dashboardPanelEl.querySelector('#equip-bag-slot') as HTMLDivElement;
     const equipDesc = this.dashboardPanelEl.querySelector('#equip-bag-desc') as HTMLSpanElement;
 
+    equipSlot.className = 'bag-slot';
     if (this.equippedBag) {
       const bagPath = `/assets/props/flat/bags/${this.equippedBag}.webp`;
-      equipSlot.innerHTML = `<img src="${bagPath}" style="max-width:54px; max-height:54px; object-fit:contain;" />`;
-      equipSlot.style.borderColor = '#7cfc00';
-      equipSlot.style.background = 'rgba(124,252,0,0.12)';
+      equipSlot.classList.add('equipped');
+      equipSlot.innerHTML = `<img src="${bagPath}" />`;
       equipDesc.innerHTML = `<strong style="color:#7cfc00;">${this.equippedBag === 'bag-adidas' ? 'Сумка Adidas (15кг)' : 'Рюкзак туриста (30кг)'}</strong><br/><span style="color:#ccc; font-size:11px;">Кликни, чтобы снять в карман</span>`;
     } else {
+      equipSlot.classList.add('empty');
       equipSlot.innerHTML = `<span style="font-size:18px; color:#444;">➕</span>`;
-      equipSlot.style.borderColor = '#ff3333';
-      equipSlot.style.background = 'rgba(25,25,25,0.85)';
-      equipDesc.innerHTML = `<strong style="color:#ff3333;">Без сумки</strong><br/><span style="color:#aaa; font-size:11px;">Доступно только 4 кармана слота</span>`;
+      equipDesc.innerHTML = `<strong style="color:#ff3333;">Без сумки</strong><br/><span style="color:#aaa; font-size:11px;">Доступно только 4 кармана</span>`;
     }
 
     // Render inventory slots
@@ -1358,75 +1252,47 @@ export class WorldScene extends Phaser.Scene {
     for (let i = 0; i < INVENTORY_SLOTS; i++) {
       const item = this.localInventory[i];
       const slot = document.createElement('div');
-      
-      slot.style.width = '94px';
-      slot.style.height = '94px';
-      slot.style.borderRadius = '8px';
-      slot.style.display = 'flex';
-      slot.style.alignItems = 'center';
-      slot.style.justifyContent = 'center';
-      slot.style.position = 'relative';
+      slot.className = 'inv-slot';
 
-      // Если слот ЗАБЛОКИРОВАН (потому что нет рюкзака подходящего уровня!)
       if (i >= activeSlotsCount) {
-        slot.style.background = 'rgba(15,15,15,0.92)';
-        slot.style.border = '2px solid #333';
-        slot.style.boxShadow = 'none';
-        slot.style.cursor = 'default';
+        slot.classList.add('locked');
         slot.innerHTML = `<span style="font-size:18px; opacity:0.35;">🔒</span>`;
         grid.appendChild(slot);
         continue;
       }
 
-      // Свободный или заполненный активный слот
-      slot.style.background = 'rgba(25,25,25,0.85)';
-      slot.style.border = '2px solid #444';
-      slot.style.boxShadow = 'inset 0 4px 10px rgba(0,0,0,0.6)';
-      slot.style.cursor = item ? 'pointer' : 'default';
-
       if (item) {
-        slot.style.border = '2px solid #7cfc00';
-        slot.style.background = 'rgba(124,252,0,0.06)';
-        slot.style.boxShadow = 'none';
+        slot.classList.add('has-item');
 
-        // Определяем спрайты предметов (Сумки, Еда, Бутылки)
-        let webpPath = `/assets/props/flat/bottles/${item}.webp`; // по умолчанию бутылка
-        let isSpecialItem = false;
-        let isFoodItem = false;
+        let webpPath = `/assets/props/flat/bottles/${item}.webp`;
+        let label = '';
 
         if (item === 'bag-adidas' || item === 'backpack-tourist') {
           webpPath = `/assets/props/flat/bags/${item}.webp`;
-          isSpecialItem = true;
+          label = '<span class="inv-slot-label" style="color:#ffd700;">СУМКА</span>';
         } else if (item === 'shawarma' || item === 'energy') {
           webpPath = `/assets/props/flat/food/${item}.webp`;
-          isFoodItem = true;
+          label = '<span class="inv-slot-label" style="color:#ff9900;">ЕДА</span>';
+        } else {
+          const weight = BOTTLE_TYPES[item as BottleType]?.weight ?? 1.0;
+          label = `<span class="inv-slot-label">${weight}кг</span>`;
         }
 
-        slot.innerHTML = `
-          <img src="${webpPath}" style="max-width:64px; max-height:68px; object-fit:contain;" />
-          ${!isSpecialItem && !isFoodItem ? `<div style="position:absolute; right:8px; bottom:8px; font-size:12px; color:#fff; background:#000000aa; padding:2px 5px; border-radius:2px; font-family: monospace;">${BOTTLE_TYPES[item as BottleType]?.weight || 1.0}кг</div>` : ''}
-          ${isSpecialItem ? `<div style="position:absolute; right:8px; bottom:8px; font-size:10px; color:#ffd700; background:#000000cc; padding:2px 5px; border-radius:2px;">СУМКА</div>` : ''}
-          ${isFoodItem ? `<div style="position:absolute; right:8px; bottom:8px; font-size:10px; color:#ff9900; background:#000000cc; padding:2px 5px; border-radius:2px;">ЕДА</div>` : ''}
-        `;
+        slot.innerHTML = `<img src="${webpPath}" />${label}`;
 
         slot.addEventListener('click', () => {
-          if (isSpecialItem) {
-            // Экипируем сумку из инвентаря!
+          if (item === 'bag-adidas' || item === 'backpack-tourist') {
             this.equipBagFromInventory(i, item as any);
-          } else if (isFoodItem) {
-            // Едим/пьем еду из инвентаря!
+          } else if (item === 'shawarma' || item === 'energy') {
             this.useFoodFromInventory(i, item as any);
+          } else if (this.nearKioskId) {
+            this.sendGameMessage({ type: 'sell-slot', slotIndex: i });
           } else {
-            // Сдаем бутылку в автомат (если игрок рядом с киоском!)
-            if (this.nearKioskId) {
-              this.sendGameMessage({ type: 'sell-slot', slotIndex: i });
-            } else {
-              this.showFloatingText('Используй автомат, чтобы сдать!', this.player.x, this.player.y - 20, '#ff9900');
-            }
+            this.showFloatingText('Используй автомат, чтобы сдать!', this.player.x, this.player.y - 20, '#ff9900');
           }
         });
       } else {
-        slot.innerHTML = `<span style="font-size:12px; color:#555;">${i+1}</span>`;
+        slot.innerHTML = `<span style="font-size:12px; color:#555;">${i + 1}</span>`;
       }
 
       grid.appendChild(slot);
@@ -1440,11 +1306,9 @@ export class WorldScene extends Phaser.Scene {
 
     const guideText = this.dashboardPanelEl.querySelector('#inv-guide-text') as HTMLSpanElement;
     if (guideText) {
-      if (this.nearKioskId) {
-        guideText.textContent = 'Кликни на бутылку, чтобы сдать!';
-      } else {
-        guideText.textContent = 'Кликни на Еду, чтобы использовать';
-      }
+      guideText.textContent = this.nearKioskId
+        ? 'Кликни на бутылку, чтобы сдать!'
+        : 'Кликни на еду, чтобы использовать';
     }
   }
 
