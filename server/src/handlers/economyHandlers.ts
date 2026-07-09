@@ -25,12 +25,13 @@ import {
   tierToBag,
 } from '../../../shared/items.js';
 import { TILE_SIZE, TILE_SIZE_HALF, type MapEntity } from '../../../shared/map.js';
-import type { Client, JobPoint, WireMessage } from '../types.js';
+import type { Client, JobPoint, PropertyPoint, WireMessage } from '../types.js';
 
 export type EconomyContext = {
   bottles: Map<string, ServerBottle>;
   kiosks: MapEntity[];
   jobPoints: JobPoint[];
+  propertyPoints: PropertyPoint[];
   saveClient: (c: Client) => void;
   broadcastAll: (payload: object) => void;
 };
@@ -386,6 +387,17 @@ export function handleBuyProperty(c: Client, msg: WireMessage, ctx: EconomyConte
   const propertyType = msg.propertyType as PropertyType;
   const def = PROPERTIES[propertyType];
   if (!def) return;
+
+  const isNearPropertyPoint = ctx.propertyPoints.some(
+    (point) =>
+      point.propertyType === propertyType &&
+      Math.hypot(c.x - point.x, c.y - point.y) < INTERACT_DIST,
+  );
+  if (!isNearPropertyPoint) {
+    send(c, { type: 'property-failed', message: 'Подойди к точке покупки недвижимости!' });
+    return;
+  }
+
   if (c.money < def.price) {
     send(c, { type: 'property-failed', message: 'Недостаточно денег!' });
     return;

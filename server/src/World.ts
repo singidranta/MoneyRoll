@@ -10,6 +10,7 @@ import {
   type BottleType,
   type InventoryItem,
   type JobType,
+  type PropertyType,
   type ServerBottle,
 } from '../../shared/economy.js';
 import {
@@ -41,7 +42,7 @@ import {
   type InteractionContext,
 } from './handlers/interactionHandlers.js';
 import { PlayerStore } from './PlayerStore.js';
-import type { Client, JobPoint, PeerSnapshot, WireMessage } from './types.js';
+import type { Client, JobPoint, PeerSnapshot, PropertyPoint, WireMessage } from './types.js';
 
 export type { WireMessage, PeerSnapshot } from './types.js';
 
@@ -53,7 +54,7 @@ export class World {
   private spawners: MapEntity[] = [];
   private kiosks: MapEntity[] = [];
   private jobPoints: JobPoint[] = [];
-  private propertyPoints: MapEntity[] = [];
+  private propertyPoints: PropertyPoint[] = [];
   private spawnerIntervals: NodeJS.Timeout[] = [];
   private passiveIncomeTimer?: NodeJS.Timeout;
   private playerStore = new PlayerStore();
@@ -94,9 +95,13 @@ export class World {
       } else if (
         entityType === 'job-courier' ||
         entityType === 'job-lemonade' ||
+        entityType === 'job-trash-sort' ||
         entityType === 'job-trash'
       ) {
-        const jobType = entityType.replace('job-', '') as JobType;
+        // job-trash оставлен для карт, созданных до появления редакторного типа.
+        const jobType: JobType = entityType === 'job-trash' || entityType === 'job-trash-sort'
+          ? 'trash-sort'
+          : entityType.replace('job-', '') as JobType;
         this.jobPoints.push({
           id: entity.id,
           jobType,
@@ -104,7 +109,17 @@ export class World {
           y: entity.cellY * TILE_SIZE + TILE_SIZE_HALF,
         });
       } else if (entityType === 'property') {
-        this.propertyPoints.push(entity);
+        const propertyType = entity.properties.propertyType as PropertyType | undefined;
+        if (propertyType && PROPERTIES[propertyType]) {
+          this.propertyPoints.push({
+            id: entity.id,
+            propertyType,
+            x: entity.cellX * TILE_SIZE + TILE_SIZE_HALF,
+            y: entity.cellY * TILE_SIZE + TILE_SIZE_HALF,
+          });
+        } else {
+          console.warn(`[MoneyRoll][World] Точка недвижимости ${entity.id} пропущена: не задан тип`);
+        }
       }
     }
 
@@ -268,6 +283,7 @@ export class World {
       bottles: this.bottles,
       kiosks: this.kiosks,
       jobPoints: this.jobPoints,
+      propertyPoints: this.propertyPoints,
       saveClient: (c) => this.playerStore.saveClient(c),
       broadcastAll: (p) => this.broadcastAll(p),
     };
