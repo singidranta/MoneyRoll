@@ -1,20 +1,32 @@
 import type { WebSocket } from 'ws';
-import { BOTTLE_TYPES, INVENTORY_SLOTS, type BottleType, type ServerBottle } from '../../shared/economy.js';
-import { cellKey, MAP_WIDTH, MAP_HEIGHT, type MapDocument, type MapEntity } from '../../shared/map.js';
+import {
+  BACKPACK_TIERS,
+  BOTTLE_TYPES,
+  FOOD_WEIGHTS,
+  GEAR_WEIGHTS,
+  INVENTORY_SLOTS,
+  type InventoryItem,
+  type BottleType,
+  type ServerBottle,
+} from '../../shared/economy.js';
+import { cellKey, MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, TILE_SIZE_HALF, type MapDocument, type MapEntity } from '../../shared/map.js';
 
 export type WireMessage = {
   type: string;
   [key: string]: unknown;
 };
 
+// ============================================================
+//  SECTION: TYPES
+// ============================================================
 type Client = {
   id: string;
   ws: WebSocket;
   x: number;
   y: number;
   money: number;
-  inventory: (BottleType | 'bag-adidas' | 'backpack-tourist' | 'shawarma' | 'energy' | null)[]; // 12 слотов инвентаря
-  backpackTier: number; // 1 = Пакет (8кг), 2 = Сумка (15кг), 3 = Рюкзак (30кг)
+  inventory: (InventoryItem | null)[]; // 12 слотов инвентаря
+  backpackTier: number; // 1 = Карманы, 2 = Сумка Adidas, 3 = Рюкзак туриста
 };
 
 export type PeerSnapshot = {
@@ -36,6 +48,9 @@ export class World {
     // Вся инициализация спавнов происходит через setMap()!
   }
 
+  // ============================================================
+  //  SECTION: LIFECYCLE
+  // ============================================================
   get size(): number {
     return this.clients.size;
   }
@@ -88,14 +103,17 @@ export class World {
     });
   }
 
+  // ============================================================
+  //  SECTION: SPAWNING
+  // ============================================================
   private tickSpawner(spawner: MapEntity, maxBottles: number): void {
     const radius = spawner.properties.spawnRadius ?? 3; // Получаем настраиваемый радиус спавна (в клетках)
 
     // Считаем сколько динамических бутылок сейчас находится рядом со спавнером (в радиусе спавна)
     let nearbyCount = 0;
     for (const b of this.bottles.values()) {
-      const cellX = Math.floor(b.x / 128);
-      const cellY = Math.floor(b.y / 128);
+      const cellX = Math.floor(b.x / TILE_SIZE);
+      const cellY = Math.floor(b.y / TILE_SIZE);
       if (Math.abs(cellX - spawner.cellX) <= radius && Math.abs(cellY - spawner.cellY) <= radius) {
         nearbyCount++;
       }
@@ -117,8 +135,8 @@ export class World {
     const id = `bottle_${Math.random().toString(36).slice(2, 10)}`;
     const type = this.selectRandomBottleType();
 
-    const pixelX = targetX * 128 + 64;
-    const pixelY = targetY * 128 + 64;
+    const pixelX = targetX * TILE_SIZE + TILE_SIZE_HALF;
+    const pixelY = targetY * TILE_SIZE + TILE_SIZE_HALF;
 
     const bottle: ServerBottle = { id, type, x: pixelX, y: pixelY };
     this.bottles.set(id, bottle);
@@ -137,6 +155,9 @@ export class World {
     return 'water';
   }
 
+  // ============================================================
+  //  SECTION: CLIENT MANAGEMENT
+  // ============================================================
   add(id: string, ws: WebSocket): void {
     const emptyInventory = Array(INVENTORY_SLOTS).fill(null);
 
@@ -173,28 +194,31 @@ export class World {
     return this.clients.get(id);
   }
 
-  private calculateWeight(inv: (BottleType | 'bag-adidas' | 'backpack-tourist' | 'shawarma' | 'energy' | null)[]): number {
+  // ============================================================
+  //  SECTION: WEIGHT & LIMIT HELPERS
+  // ============================================================
+  private calculateWeight(inv: (InventoryItem | null)[]): number {
     let total = 0;
     for (const item of inv) {
-      if (item) {
-        if (item === 'bag-adidas' || item === 'backpack-tourist') {
-          total += 0;
-        } else if (item === 'shawarma') {
-          total += 0.5;
-        } else if (item === 'energy') {
-          total += 0.3;
-        } else {
-          total += BOTTLE_TYPES[item].weight;
-        }
+      if (!item) continue;
+      if (item === 'bag-adidas' || item === 'backpack-tourist') {
+        total += GEAR_WEIGHTS[item];
+      } else if (item === 'shawarma' || item === 'energy') {
+        total += FOOD_WEIGHTS[item];
+      } else {
+        total += BOTTLE_TYPES[item].weight;
       }
     }
     return parseFloat(total.toFixed(2));
   }
 
   private getMaxWeightLimit(tier: number): number {
-    return tier === 1 ? 8.0 : tier === 2 ? 15.0 : 30.0;
+    return BACKPACK_TIERS[tier]?.maxWeight ?? BACKPACK_TIERS[1].maxWeight;
   }
 
+  // ============================================================
+  //  SECTION: MESSAGE HANDLERS
+  // ============================================================
   handle(fromId: string, msg: WireMessage): void {
     const c = this.clients.get(fromId);
     if (!c) return;
@@ -446,6 +470,9 @@ export class World {
     }
   }
 
+  // ============================================================
+  //  SECTION: BROADCAST
+  // ============================================================
   broadcastExcept(excludeId: string, payload: object): void {
     const json = JSON.stringify(payload);
     for (const [id, c] of this.clients) {
