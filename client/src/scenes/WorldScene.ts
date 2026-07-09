@@ -127,15 +127,24 @@ export class WorldScene extends Phaser.Scene {
     this.keyI = kb.addKey(Phaser.Input.Keyboard.KeyCodes.I);
     this.keyTab = kb.addKey(Phaser.Input.Keyboard.KeyCodes.TAB);
 
-    // ---------- Background ----------
+    // ---------- Background (fills entire camera — no black void past map edge) ----------
     this.groundTileSprite = this.add.tileSprite(
-      MAP_PIXEL_W / 2,
-      MAP_PIXEL_H / 2,
-      MAP_PIXEL_W,
-      MAP_PIXEL_H,
+      0,
+      0,
+      this.scale.width,
+      this.scale.height,
       'tile-ground-grass'
     );
+    this.groundTileSprite.setOrigin(0, 0);
+    this.groundTileSprite.setScrollFactor(0);
     this.groundTileSprite.setDepth(0);
+
+    this.scale.on('resize', (gameSize: Phaser.Structs.Size) => {
+      this.groundTileSprite?.setSize(gameSize.width, gameSize.height);
+      // Keep camera padding large enough for any viewport
+      const pad = Math.max(gameSize.width, gameSize.height);
+      this.cameras.main.setBounds(-pad, -pad, MAP_PIXEL_W + pad * 2, MAP_PIXEL_H + pad * 2);
+    });
 
     // ---------- Player sprite & animations ----------
     this.player = this.add.sprite(DEFAULT_SPAWN.x, DEFAULT_SPAWN.y, 'player-sprites', 0);
@@ -156,35 +165,32 @@ export class WorldScene extends Phaser.Scene {
     this.obstaclesCollider = this.physics.add.collider(this.player, this.obstaclesGroup);
 
     // ---------- Interaction prompt ----------
-    this.usePrompt = this.add.text(0, 0, '  [ E ]  ', {
-      fontFamily: 'Rubik, monospace',
-      fontSize: '20px',
+    this.usePrompt = this.add.text(0, 0, '[E]', {
+      fontFamily: 'system-ui, monospace',
+      fontSize: '14px',
       fontStyle: 'bold',
-      color: '#ffc72c',
-      backgroundColor: '#10141cee',
-      padding: { x: 12, y: 7 }
+      color: '#e8eaed',
+      backgroundColor: '#1a1e26',
+      padding: { x: 8, y: 4 },
     });
-    this.usePrompt.setStroke('#ffc72c', 2);
-    this.usePrompt.setShadow(0, 4, '#000000', 12, true, true);
     this.usePrompt.setOrigin(0.5);
     this.usePrompt.setDepth(1000);
     this.usePrompt.setVisible(false);
 
-    this.tweens.add({
-      targets: this.usePrompt,
-      scale: 1.15,
-      yoyo: true,
-      repeat: -1,
-      duration: 600,
-      ease: 'Sine.easeInOut'
-    });
-
     // ---------- Camera ----------
+    // Padding around the map so the camera can show grass past the edge
+    // instead of clamping hard and leaving a black strip on ultrawide / map edge.
+    const camPad = Math.max(this.scale.width, this.scale.height);
     this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
-    this.cameras.main.setBackgroundColor('#07090d');
-    this.cameras.main.setBounds(0, 0, MAP_PIXEL_W, MAP_PIXEL_H);
+    this.cameras.main.setBackgroundColor('#5a7a42');
+    this.cameras.main.setBounds(
+      -camPad,
+      -camPad,
+      MAP_PIXEL_W + camPad * 2,
+      MAP_PIXEL_H + camPad * 2
+    );
 
-    // ---------- World bounds for physics ----------
+    // ---------- World bounds for physics (playable area only) ----------
     this.physics.world.setBounds(0, 0, MAP_PIXEL_W, MAP_PIXEL_H);
 
     // ---------- Netcode ----------
@@ -353,12 +359,6 @@ export class WorldScene extends Phaser.Scene {
     sprite.setScale(0.58);
     sprite.setDepth(100);
     sprite.setAngle(entity.rotation);
-
-    const glow = this.add.graphics();
-    glow.fillStyle(0x00ff66, 0.08);
-    glow.fillCircle(px, py, 70);
-    glow.setDepth(10);
-
     this.kiosksSpritesMap.set(entity.id, sprite);
   }
 
@@ -670,6 +670,12 @@ export class WorldScene extends Phaser.Scene {
     const now = performance.now();
     const dt = Math.min(delta, 100) / 1000;
 
+    // Keep infinite grass aligned with camera scroll
+    if (this.groundTileSprite) {
+      this.groundTileSprite.tilePositionX = this.cameras.main.scrollX;
+      this.groundTileSprite.tilePositionY = this.cameras.main.scrollY;
+    }
+
     if (this.energyDrinkBuffTimer > 0) this.energyDrinkBuffTimer -= dt;
     if (this.shawarmaBuffTimer > 0) this.shawarmaBuffTimer -= dt;
 
@@ -842,31 +848,33 @@ export class WorldScene extends Phaser.Scene {
     document.body.appendChild(hud);
     this.hudOverlayEl = hud;
 
-    // 1. Balance panel (top-right)
+    // 1. Balance (top-right)
     const moneyPanel = document.createElement('div');
     moneyPanel.id = 'hud-money-panel';
     moneyPanel.innerHTML = `$<span id="hud-money-val">5.00</span>`;
     hud.appendChild(moneyPanel);
 
-    // 2. Weight & stamina panel (bottom-left)
+    // 2. Weight & stamina (bottom-left)
     const statsPanel = document.createElement('div');
     statsPanel.id = 'hud-stats-panel';
     statsPanel.innerHTML = `
-      <div id="hud-weight" style="display:flex;align-items:center;gap:6px;"><img src="/assets/props/flat/bags/bag-adidas.webp" style="width:22px;height:22px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));vertical-align:middle;" /> Пакет (0.0 / 8.0 кг)</div>
+      <div class="hud-stat-label" id="hud-weight">Пакет · 0.0 / 8.0 кг</div>
       <div class="hud-bar">
-        <div id="hud-weight-bar" class="hud-bar-fill" style="width:0%; background:#3ae06f; color:#3ae06f;"></div>
+        <div id="hud-weight-bar" class="hud-bar-fill" style="width:0%; background:#4caf6a;"></div>
       </div>
-      <div style="font-size:11px; color:#8b93a3; margin-bottom:2px; font-weight:600; letter-spacing:1px; text-transform:uppercase;"><svg width="12" height="12" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px;fill:#ffc72c;filter:drop-shadow(0 0 3px rgba(255,199,44,0.6));"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>Энергия <span style="opacity:0.6;">(Shift — спринт)</span></div>
-      <div class="hud-bar" style="margin-bottom:2px;">
-        <div id="hud-stamina-bar" class="hud-bar-fill" style="width:100%; background:#ffc72c; color:#ffc72c;"></div>
+      <div class="hud-stat-hint">Энергия · Shift — бег</div>
+      <div class="hud-bar">
+        <div id="hud-stamina-bar" class="hud-bar-fill" style="width:100%; background:#e0b03a;"></div>
       </div>
     `;
     hud.appendChild(statsPanel);
 
-    // 3. Backpack toggle button (bottom-right)
+    // 3. Inventory button (bottom-right)
     const btnBackpack = document.createElement('button');
     btnBackpack.id = 'btn-toggle-backpack';
-    btnBackpack.innerHTML = '<img src="/assets/props/flat/bags/backpack-tourist.webp" style="width:32px;height:32px;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.6));" />';
+    btnBackpack.title = 'Инвентарь (I)';
+    btnBackpack.innerHTML =
+      '<img src="/assets/props/flat/bags/backpack-tourist.webp" alt="Инвентарь" width="28" height="28" />';
     btnBackpack.addEventListener('click', () => this.toggleInventory());
     hud.appendChild(btnBackpack);
   }
@@ -914,11 +922,9 @@ export class WorldScene extends Phaser.Scene {
     const panel = document.createElement('div');
     panel.className = 'dashboard-panel kiosk';
     panel.innerHTML = `
-      <h3><img src="/assets/props/flat/kiosk/recycle-machine.webp" style="width:28px;height:28px;vertical-align:middle;margin-right:6px;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));" />АВТОМАТ СДАЧИ</h3>
-      <p style="font-size:13px; color:#8b93a3; line-height:1.55; margin:0 0 16px; text-align:center;">
-        Сдавай стеклотару. Кликни по бутылке в инвентаре справа для поштучной сдачи или сдай всё сразу:
-      </p>
-      <button id="btn-recycle-all" class="dash-btn dash-btn-primary"><img src="/assets/props/flat/kiosk/recycle-machine.webp" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />СДАТЬ ВСЕ БУТЫЛКИ</button>
+      <h3><img src="/assets/props/flat/kiosk/recycle-machine.webp" alt="" />Автомат сдачи</h3>
+      <p>Кликни бутылку в инвентаре справа, или сдай всё сразу.</p>
+      <button id="btn-recycle-all" class="dash-btn dash-btn-primary">Сдать все бутылки</button>
       <button id="btn-close-dashboard" class="dash-btn dash-btn-danger">Закрыть</button>
     `;
     panel.querySelector('#btn-recycle-all')?.addEventListener('click', () => {
@@ -934,26 +940,24 @@ export class WorldScene extends Phaser.Scene {
     const panel = document.createElement('div');
     panel.className = 'dashboard-panel food';
     panel.innerHTML = `
-      <h3><img src="/assets/props/flat/kiosk/food-cart.webp" style="width:28px;height:28px;vertical-align:middle;margin-right:6px;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));" />ЛАРЁК У АШОТА</h3>
-      <div class="dash-category"><img src="/assets/props/flat/food/shawarma.webp" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />ПИТАНИЕ (в инвентарь)</div>
+      <h3><img src="/assets/props/flat/kiosk/food-cart.webp" alt="" />Ларёк у Ашота</h3>
+      <div class="dash-category">Еда (в инвентарь)</div>
       <button id="btn-buy-shawa" class="dash-btn dash-btn-buy">
-        <span><img src="/assets/props/flat/food/shawarma.webp" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />Сытная Шаурма</span>
+        <span>Шаурма</span>
         <span>$1.50</span>
       </button>
       <button id="btn-buy-energy" class="dash-btn dash-btn-buy">
-        <span><img src="/assets/props/flat/food/energy-drink.webp" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />Энергетик "Ягуар"</span>
+        <span>Энергетик «Ягуар»</span>
         <span>$3.00</span>
       </button>
-      <p style="font-size:11px; color:#8b93a3; line-height:1.5; margin:10px 0; text-align:center;">
-        Купленная еда падает в инвентарь. Кликни на неё, чтобы съесть/выпить.
-      </p>
+      <p>Еда попадает в инвентарь. Кликни по ней, чтобы съесть.</p>
       <button id="btn-close-dashboard" class="dash-btn dash-btn-danger">Закрыть</button>
     `;
     panel.querySelector('#btn-buy-shawa')?.addEventListener('click', () => {
-      this.buyItemToInventory('shawarma', 1.50);
+      this.buyItemToInventory('shawarma', 1.5);
     });
     panel.querySelector('#btn-buy-energy')?.addEventListener('click', () => {
-      this.buyItemToInventory('energy', 3.00);
+      this.buyItemToInventory('energy', 3.0);
     });
     panel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => {
       this.toggleInventory(false);
@@ -965,45 +969,45 @@ export class WorldScene extends Phaser.Scene {
     const panel = document.createElement('div');
     panel.className = 'dashboard-panel clothing';
     panel.innerHTML = `
-      <h3><img src="/assets/props/flat/buildings/clothing-shop.webp" style="width:28px;height:28px;vertical-align:middle;margin-right:6px;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));" />МАГАЗИН ОДЕЖДЫ</h3>
-      <div class="dash-category"><img src="/assets/props/flat/bags/bag-adidas.webp" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />СУМКИ</div>
+      <h3><img src="/assets/props/flat/buildings/clothing-shop.webp" alt="" />Магазин одежды</h3>
+      <div class="dash-category">Сумки</div>
       <button id="btn-buy-bag-adidas" class="dash-btn dash-btn-buy">
-        <span><img src="/assets/props/flat/bags/bag-adidas.webp" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />Сумка Adidas (15кг)</span>
+        <span>Сумка Adidas (15 кг)</span>
         <span>$15.00</span>
       </button>
       <button id="btn-buy-backpack-tourist" class="dash-btn dash-btn-buy">
-        <span><img src="/assets/props/flat/bags/backpack-tourist.webp" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />Рюкзак туриста (30кг)</span>
+        <span>Рюкзак туриста (30 кг)</span>
         <span>$45.00</span>
       </button>
-      <div class="dash-category" style="margin-top:12px;"><img src="/assets/props/flat/clothing/adidas-jacket.webp" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />ЭКИПИРОВКА</div>
+      <div class="dash-category">Экипировка</div>
       <button id="btn-buy-jacket" class="dash-btn dash-btn-buy">
-        <span><img src="/assets/props/flat/clothing/adidas-jacket.webp" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />Свитшот Adidas (+реген)</span>
+        <span>Свитшот Adidas (+реген)</span>
         <span>$10.00</span>
       </button>
       <button id="btn-buy-sneakers" class="dash-btn dash-btn-buy">
-        <span><img src="/assets/props/flat/clothing/sneakers.webp" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />Кроссовки Nike (+скорость)</span>
+        <span>Кроссовки Nike (+скорость)</span>
         <span>$20.00</span>
       </button>
       <button id="btn-buy-crown" class="dash-btn dash-btn-buy">
-        <span><img src="/assets/props/flat/clothing/crown.webp" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />Королевская Корона</span>
+        <span>Корона</span>
         <span>$100.00</span>
       </button>
-      <button id="btn-close-dashboard" class="dash-btn dash-btn-danger" style="margin-top:10px;">Закрыть</button>
+      <button id="btn-close-dashboard" class="dash-btn dash-btn-danger">Закрыть</button>
     `;
     panel.querySelector('#btn-buy-bag-adidas')?.addEventListener('click', () => {
-      this.buyItemToInventory('bag-adidas', 15.00);
+      this.buyItemToInventory('bag-adidas', 15.0);
     });
     panel.querySelector('#btn-buy-backpack-tourist')?.addEventListener('click', () => {
-      this.buyItemToInventory('backpack-tourist', 45.00);
+      this.buyItemToInventory('backpack-tourist', 45.0);
     });
     panel.querySelector('#btn-buy-jacket')?.addEventListener('click', () => {
-      this.buyClothingItem('jacket', 10.00);
+      this.buyClothingItem('jacket', 10.0);
     });
     panel.querySelector('#btn-buy-sneakers')?.addEventListener('click', () => {
-      this.buyClothingItem('sneakers', 20.00);
+      this.buyClothingItem('sneakers', 20.0);
     });
     panel.querySelector('#btn-buy-crown')?.addEventListener('click', () => {
-      this.buyClothingItem('crown', 100.00);
+      this.buyClothingItem('crown', 100.0);
     });
     panel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => {
       this.toggleInventory(false);
@@ -1017,23 +1021,22 @@ export class WorldScene extends Phaser.Scene {
     panel.className = 'dashboard-panel';
     panel.innerHTML = `
       <div class="inventory-header">
-        <span class="inventory-title"><img src="/assets/props/flat/bags/backpack-tourist.webp" style="width:24px;height:24px;vertical-align:middle;margin-right:6px;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));" />МОЙ РЮКЗАК</span>
+        <span class="inventory-title">
+          <img src="/assets/props/flat/bags/backpack-tourist.webp" alt="" />
+          Рюкзак
+        </span>
         <button id="btn-close-dashboard-x" class="dash-btn-close" title="Закрыть (I)">&times;</button>
       </div>
       <div class="bag-slot-row">
-        <div id="equip-bag-slot" class="bag-slot empty">
-          <!-- equipped bag icon goes here -->
-        </div>
-        <div style="font-size:12px; line-height:1.45;">
-          <strong style="color:#3ae06f; display:block; letter-spacing:1px; font-size:11px; text-transform:uppercase;">Слот для сумки</strong>
-          <span id="equip-bag-desc" style="color:#8b93a3;">Без сумки (доступно только 4 кармана)</span>
+        <div id="equip-bag-slot" class="bag-slot empty"></div>
+        <div style="font-size:12px; line-height:1.4;">
+          <strong style="color:#e8eaed; display:block; font-size:12px;">Слот сумки</strong>
+          <span id="equip-bag-desc" style="color:#8a919e;">Без сумки · 4 кармана</span>
         </div>
       </div>
-      <div id="inventory-grid">
-        <!-- slots go here -->
-      </div>
+      <div id="inventory-grid"></div>
       <div class="dashboard-footer">
-        <span id="inv-guide-text">Сдача бутылок кликом в автомате</span>
+        <span id="inv-guide-text">Кликни предмет, чтобы использовать</span>
         <span id="inv-weight-status">Вес: 0.0 / ${BACKPACK_TIERS[1].maxWeight} кг</span>
       </div>
     `;
@@ -1197,30 +1200,31 @@ export class WorldScene extends Phaser.Scene {
     if (moneyVal) moneyVal.textContent = this.localMoney.toFixed(2);
 
     const weightEl = this.hudOverlayEl.querySelector('#hud-weight');
-    if (weightEl) weightEl.innerHTML = `<img src="/assets/props/flat/bags/bag-adidas.webp" style="width:16px;height:16px;vertical-align:middle;margin-right:2px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />${bagName} (${this.currentWeight.toFixed(1)} / ${maxLimit} кг)`;
+    if (weightEl) {
+      weightEl.textContent = `${bagName} · ${this.currentWeight.toFixed(1)} / ${maxLimit} кг`;
+    }
 
     const weightBar = this.hudOverlayEl.querySelector('#hud-weight-bar') as HTMLDivElement;
     if (weightBar) {
       const pct = Math.min((this.currentWeight / maxLimit) * 100, 100);
-      const color = pct > 85 ? '#ff5252' : pct > 60 ? '#ffc72c' : '#3ae06f';
+      const color = pct > 85 ? '#d45454' : pct > 60 ? '#e0b03a' : '#4caf6a';
       weightBar.style.width = `${pct}%`;
       weightBar.style.background = color;
-      weightBar.style.color = color; // glow via currentColor
     }
 
     const staminaBar = this.hudOverlayEl.querySelector('#hud-stamina-bar') as HTMLDivElement;
     if (staminaBar) {
       const pct = Math.min(this.stamina, 100);
-      const color = this.energyDrinkBuffTimer > 0
-        ? '#35c8ff'
-        : this.shawarmaBuffTimer > 0
-        ? '#ff9f43'
-        : this.isExhausted
-        ? '#ff5252'
-        : '#ffc72c';
+      const color =
+        this.energyDrinkBuffTimer > 0
+          ? '#4aa8c8'
+          : this.shawarmaBuffTimer > 0
+            ? '#d4893a'
+            : this.isExhausted
+              ? '#d45454'
+              : '#e0b03a';
       staminaBar.style.width = `${pct}%`;
       staminaBar.style.background = color;
-      staminaBar.style.color = color; // glow via currentColor
     }
 
     const playersEl = this.hudOverlayEl.querySelector('#hud-players');
@@ -1243,12 +1247,16 @@ export class WorldScene extends Phaser.Scene {
     if (this.equippedBag) {
       const bagPath = `/assets/props/flat/bags/${this.equippedBag}.webp`;
       equipSlot.classList.add('equipped');
-      equipSlot.innerHTML = `<img src="${bagPath}" />`;
-      equipDesc.innerHTML = `<strong style="color:#3ae06f;">${this.equippedBag === 'bag-adidas' ? 'Сумка Adidas (15кг)' : 'Рюкзак туриста (30кг)'}</strong><br/><span style="color:#8b93a3; font-size:11px;">Кликни, чтобы снять в карман</span>`;
+      equipSlot.innerHTML = `<img src="${bagPath}" alt="" />`;
+      equipDesc.innerHTML =
+        this.equippedBag === 'bag-adidas'
+          ? 'Сумка Adidas · 15 кг<br/><span style="color:#8a919e;font-size:11px;">Кликни, чтобы снять</span>'
+          : 'Рюкзак туриста · 30 кг<br/><span style="color:#8a919e;font-size:11px;">Кликни, чтобы снять</span>';
     } else {
       equipSlot.classList.add('empty');
-      equipSlot.innerHTML = `<span style="font-size:20px; color:#4a5261;">＋</span>`;
-      equipDesc.innerHTML = `<strong style="color:#ff5252;">Без сумки</strong><br/><span style="color:#8b93a3; font-size:11px;">Доступно только 4 кармана</span>`;
+      equipSlot.innerHTML = `<span style="font-size:18px;color:#5a6270;">+</span>`;
+      equipDesc.innerHTML =
+        'Без сумки · 4 кармана<br/><span style="color:#8a919e;font-size:11px;">Купи сумку в магазине</span>';
     }
 
     // Render inventory slots
@@ -1274,13 +1282,16 @@ export class WorldScene extends Phaser.Scene {
 
         if (item === 'bag-adidas' || item === 'backpack-tourist') {
           webpPath = `/assets/props/flat/bags/${item}.webp`;
-          label = '<span class="inv-slot-label" style="color:#ffc72c; border-color:rgba(255,199,44,0.4);">СУМКА</span>';
-        } else if (item === 'shawarma' || item === 'energy') {
-          webpPath = `/assets/props/flat/food/${item}.webp`;
-          label = '<span class="inv-slot-label" style="color:#ff9f43; border-color:rgba(255,159,67,0.4);">ЕДА</span>';
+          label = '<span class="inv-slot-label">сумка</span>';
+        } else if (item === 'shawarma') {
+          webpPath = '/assets/props/flat/food/shawarma.webp';
+          label = '<span class="inv-slot-label">еда</span>';
+        } else if (item === 'energy') {
+          webpPath = '/assets/props/flat/food/energy-drink.webp';
+          label = '<span class="inv-slot-label">еда</span>';
         } else {
           const weight = BOTTLE_TYPES[item as BottleType]?.weight ?? 1.0;
-          label = `<span class="inv-slot-label">${weight}кг</span>`;
+          label = `<span class="inv-slot-label">${weight} кг</span>`;
         }
 
         slot.innerHTML = `<img src="${webpPath}" />${label}`;
@@ -1297,7 +1308,7 @@ export class WorldScene extends Phaser.Scene {
           }
         });
       } else {
-        slot.innerHTML = `<span style="font-size:11px; color:#3a4150; font-weight:700;">${i + 1}</span>`;
+        slot.innerHTML = `<span style="font-size:11px;color:#4a5260;font-weight:600;">${i + 1}</span>`;
       }
 
       grid.appendChild(slot);
@@ -1382,42 +1393,37 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  private showFloatingText(text: string, x: number, y: number, color = '#3ae06f'): void {
-    // Приводим старые цвета к новой палитре
+  private showFloatingText(text: string, x: number, y: number, color = '#4caf6a'): void {
     const colorMap: Record<string, string> = {
-      '#7cfc00': '#3ae06f',
-      '#ffd700': '#ffc72c',
-      '#ff3333': '#ff5252',
-      '#ff9900': '#ff9f43',
+      '#7cfc00': '#4caf6a',
+      '#3ae06f': '#4caf6a',
+      '#ffd700': '#e0b03a',
+      '#ffc72c': '#e0b03a',
+      '#ff3333': '#d45454',
+      '#ff5252': '#d45454',
+      '#ff9900': '#d4893a',
+      '#ff9f43': '#d4893a',
     };
     const themed = colorMap[color] ?? color;
 
     const ftext = this.add.text(x, y, text, {
-      fontFamily: 'Rubik, monospace',
+      fontFamily: 'system-ui, sans-serif',
       fontSize: '12px',
       fontStyle: 'bold',
       color: themed,
-      backgroundColor: '#10141cee',
-      padding: { x: 8, y: 5 }
+      backgroundColor: '#1a1e26',
+      padding: { x: 6, y: 3 },
     });
     ftext.setOrigin(0.5);
     ftext.setDepth(2000);
-    ftext.setScale(0.6);
-    ftext.setShadow(0, 3, '#000000', 8, true, true);
 
     this.tweens.add({
       targets: ftext,
-      scale: 1,
-      duration: 180,
-      ease: 'Back.easeOut'
-    });
-    this.tweens.add({
-      targets: ftext,
-      y: y - 34,
+      y: y - 28,
       alpha: 0,
-      duration: 1600,
-      delay: 220,
-      onComplete: () => ftext.destroy()
+      duration: 1200,
+      ease: 'Linear',
+      onComplete: () => ftext.destroy(),
     });
   }
 
