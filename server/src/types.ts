@@ -61,3 +61,9 @@ export type PropertyPoint = {
   x: number;
   y: number;
 };
+
+export type SchoolPoint = {
+  id: string;
+  x: number;
+  y: number;
+};

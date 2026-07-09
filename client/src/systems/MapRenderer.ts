@@ -3,7 +3,6 @@
 // ============================================================
 
 import Phaser from 'phaser';
-import { PROPERTIES } from '../../../shared/economy';
 import { parseKey, TILE_SIZE, TILE_SIZE_HALF, type MapDocument, type MapEntity } from '../../../shared/map';
 import { KIOSK_SCALE, OBSTACLE_SCALE } from '../config/WorldConstants';
 
@@ -78,18 +77,15 @@ export class MapRenderer {
         case 'courier-hub':
         case 'job-courier':
           this.renderBuildingSprite(entity, px, py, 'courier-hub', 0.9);
-          this.renderActionMarker(px, py - 70, '🚲', 'КУРЬЕР PRO', '$8–22', 0x3b82f6);
           break;
         case 'trash-sort-station':
         case 'job-trash-sort':
         case 'job-trash':
           this.renderBuildingSprite(entity, px, py, 'trash-sort-station', 0.9);
-          this.renderActionMarker(px, py - 70, '♻', 'СОРТИРОВКА', '$5–14', 0x22c55e);
           break;
         case 'lemonade-stand':
         case 'job-lemonade':
           this.renderBuildingSprite(entity, px, py, 'lemonade-stand', 0.9);
-          this.renderActionMarker(px, py - 70, '🍋', 'ЛИМОНАД', '$4.5–9.5', 0xfacc15);
           break;
         case 'apartment-1':
         case 'apartment-2':
@@ -100,18 +96,9 @@ export class MapRenderer {
         case 'npc':
           this.renderNpc(entity, px, py);
           break;
-        case 'property': {
-          const property = PROPERTIES[entity.properties.propertyType ?? 'shack'];
-          this.renderActionMarker(
-            px,
-            py,
-            '⌂',
-            property.name.toUpperCase(),
-            `$${property.price} · +$${property.incomePerMin}/мин`,
-            0xa855f7,
-          );
+        case 'property':
+          this.renderProperty(entity, px, py);
           break;
-        }
       }
     }
   }
@@ -140,45 +127,18 @@ export class MapRenderer {
     this.kioskSprites.set(entity.id, sprite);
   }
 
-  private renderActionMarker(
-    px: number,
-    py: number,
-    icon: string,
-    title: string,
-    subtitle: string,
-    color: number,
-  ): void {
-    const marker = this.scene.add.container(px, py);
-    marker.setDepth(102);
+  private renderProperty(entity: MapEntity, px: number, py: number): void {
+    const propertyType = entity.properties.propertyType ?? 'shack';
+    const spriteKey = propertyType === 'shack'
+      ? 'shack'
+      : propertyType === 'apartment-big'
+        ? 'apartment-2'
+        : propertyType === 'lemonade-stand'
+          ? 'lemonade-stand'
+          : 'apartment-1';
 
-    const body = this.scene.add.rectangle(0, 0, 112, 82, color, 0.92);
-    body.setStrokeStyle(3, 0xffffff, 0.9);
-
-    const iconText = this.scene.add
-      .text(-39, 0, icon, { fontFamily: 'system-ui, sans-serif', fontSize: '30px' })
-      .setOrigin(0.5);
-    const titleText = this.scene.add
-      .text(10, -13, title, {
-        fontFamily: 'monospace',
-        fontSize: '9px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-        align: 'center',
-        wordWrap: { width: 72 },
-      })
-      .setOrigin(0.5);
-    const subtitleText = this.scene.add
-      .text(10, 20, subtitle, {
-        fontFamily: 'monospace',
-        fontSize: '9px',
-        color: '#f8fafc',
-        align: 'center',
-        wordWrap: { width: 72 },
-      })
-      .setOrigin(0.5);
-
-    marker.add([body, iconText, titleText, subtitleText]);
-    this.npcSprites.push(marker);
+    // Недвижимость теперь выглядит как здание, а не как большая квадратная карточка.
+    this.renderBuildingSprite(entity, px, py, spriteKey, 0.9);
   }
 
   // ============================================================
