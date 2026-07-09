@@ -3,7 +3,7 @@
 // ============================================================
 
 import type { JobType, JobSkill, JobLicense } from '../../../shared/economy';
-import { TRASH_FRACTIONS, TRASH_SORT_ITEMS, COURIER_DISTRICTS } from '../../../shared/economy';
+import { TRASH_FRACTIONS, TRASH_SORT_ITEMS } from '../../../shared/economy';
 
 export type JobStartCallback = (score: number, details?: any) => void;
 export type TrainingBuyCallback = (courseId: string) => void;
@@ -198,121 +198,10 @@ export class JobMinigameUI {
   }
 
   // --- COURIER MINIGAME (legacy, not used anymore) ---
-  showCourier(onFinish: JobStartCallback, onClose: () => void): void {
+  showCourier(onFinish: JobStartCallback, _onClose: () => void): void {
     // Simple courier is now handled directly in WorldScene (parcel → house)
     onFinish(85); // fallback reward if ever called
     this.destroy();
-  }
-    document.body.appendChild(root);
-    this.root = root;
-    const stageEl = root.querySelector('#courier-stage') as HTMLElement;
-    const progressEl = root.querySelector('#courier-progress') as HTMLElement;
-
-    // Stage 1 – sort
-    const districts = [...COURIER_DISTRICTS];
-    const packages = Array.from({length:6},(_,i)=> ({
-      id:i,
-      label: `📦 #${1000+i}`,
-      district: districts[Math.floor(Math.random()*districts.length)].id,
-      address: `${Math.floor(Math.random()*120)+1} ${['Ленина','Мира','Садовая','Центральная'][Math.floor(Math.random()*4)]}`,
-      fragile: Math.random()>.65
-    }));
-    let sorted=0, correctSort=0;
-    const renderSort = ()=>{
-      progressEl.style.width='33%';
-      stageEl.innerHTML = `
-        <div style="margin-bottom:12px;font-weight:600">Сортируй посылки по районам:</div>
-        <div id="pkg-pool" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;background:#0c111b;padding:12px;border-radius:12px;min-height:70px;border:1px dashed #2c3446"></div>
-        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px" id="district-bins"></div>
-        <div style="margin-top:12px;font-size:13px;color:#aab3c3"><span id="sort-stat">0 / ${packages.length}</span> · <span id="sort-acc">100%</span></div>`;
-      const pool = stageEl.querySelector('#pkg-pool') as HTMLElement;
-      packages.forEach(p=>{
-        const el=document.createElement('div');
-        el.draggable=true;
-        el.dataset.district=p.district;
-        el.dataset.id=String(p.id);
-        el.style.cssText='background:#1a2234;border:1px solid #32405a;padding:9px 12px;border-radius:10px;cursor:grab;font-size:13px';
-        el.innerHTML=`${p.label} <span style="color:#8b97ad">→ ${p.address}</span> ${p.fragile?'<span style="color:#ff9f43">⚠ хрупкое</span>':''}`;
-        el.addEventListener('dragstart',e=>e.dataTransfer?.setData('text',p.district+'|'+p.id));
-        pool.appendChild(el);
-      });
-      const bins = stageEl.querySelector('#district-bins') as HTMLElement;
-      districts.forEach(d=>{
-        const b=document.createElement('div');
-        b.dataset.district=d.id;
-        b.style.cssText='border:2px dashed #3a455e;border-radius:12px;padding:14px;background:#0f1420;min-height:80px';
-        b.innerHTML=`<div style="font-weight:700">${d.name}</div><div style="font-size:12px;color:#8d97aa">бонус x${d.bonus}</div><div class="dcnt" style="margin-top:6px;font-size:12px;color:#7a889f">0 посылок</div>`;
-        b.addEventListener('dragover',e=>e.preventDefault());
-        b.addEventListener('drop',e=>{
-          e.preventDefault();
-          const data=e.dataTransfer?.getData('text'); if(!data) return;
-          const [dist,idStr]=data.split('|');
-          const el = pool.querySelector(`[data-id="${idStr}"]`) as HTMLElement;
-          if(!el || el.style.opacity==='0.4') return;
-          sorted++;
-          const ok = dist===b.dataset.district;
-          if(ok) correctSort++;
-          el.style.opacity='0.4'; el.style.pointerEvents='none';
-          const cnt = b.querySelector('.dcnt') as HTMLElement;
-          cnt.textContent = (parseInt(cnt.textContent||'0')+1)+' посылок';
-          stageEl.querySelector('#sort-stat')!.textContent = `${sorted} / ${packages.length}`;
-          const acc = Math.round((correctSort/sorted)*100);
-          stageEl.querySelector('#sort-acc')!.textContent = acc+'%';
-          if(sorted>=packages.length) setTimeout(()=>renderDelivery(),600);
-        });
-        bins.appendChild(b);
-      });
-    };
-
-    const renderDelivery = ()=>{
-      progressEl.style.width='66%';
-      // 3 доставки – выбираем адрес
-      const deliveries = packages.slice(0,3);
-      let step=0, correctDel=0;
-      const next = ()=>{
-        if(step>=deliveries.length){
-          const sortAcc = Math.round((correctSort/packages.length)*100);
-          const delAcc = Math.round((correctDel/deliveries.length)*100);
-          const totalScore = Math.round(sortAcc*0.55 + delAcc*0.45);
-          progressEl.style.width='100%';
-          setTimeout(()=>{ this.destroy(); onFinish(totalScore,{sortAcc,delAcc}); },400);
-          return;
-        }
-        const d = deliveries[step];
-        const wrongAddrs = [
-          `${Math.floor(Math.random()*90+10)} Пушкина`,
-          `${Math.floor(Math.random()*90+10)} Советская`,
-          `${Math.floor(Math.random()*90+10)} Молодёжная`,
-        ].filter(a=>a!==d.address).slice(0,2);
-        const options = [d.address, ...wrongAddrs].sort(()=>Math.random()-0.5);
-        stageEl.innerHTML = `
-          <div style="margin-bottom:10px;font-weight:600">Этап 2/2 – Доставка ${step+1}/${deliveries.length}</div>
-          <div style="background:#0b101a;border:1px solid #2b3448;border-radius:12px;padding:16px;margin-bottom:14px">
-            <div style="font-size:15px">📦 Посылка ${d.label} ${d.fragile?'<span style="color:#ff9f43">⚠ ХРУПКОЕ</span>':''}</div>
-            <div style="color:#9aab c2;font-size:13px;margin-top:6px">Район: <b>${districts.find(x=>x.id===d.district)?.name}</b> · Нужно доставить по адресу:</div>
-            <div style="font-size:18px;font-weight:800;margin-top:8px;color:#7cfc00">❓ Куда везём?</div>
-          </div>
-          <div style="display:grid;gap:10px">${options.map(opt=>`
-            <button class="del-opt" data-addr="${opt}" style="background:#1b2436;border:1px solid #32405d;color:#e8eaed;padding:12px 14px;border-radius:10px;text-align:left;cursor:pointer;font-size:15px">🏠 ${opt}</button>
-          `).join('')}</div>
-          <div style="margin-top:12px;font-size:12px;color:#8895a8">Правильных: ${correctDel}/${step}</div>
-        `;
-        stageEl.querySelectorAll('.del-opt').forEach(btn=>{
-          btn.addEventListener('click',()=>{
-            const addr = (btn as HTMLElement).dataset.addr!;
-            const ok = addr===d.address;
-            if(ok) correctDel++;
-            (btn as HTMLElement).style.background = ok ? '#134e2a' : '#4e1a1a';
-            setTimeout(()=>{ step++; next(); }, 550);
-          });
-        });
-      };
-      next();
-    };
-
-    renderSort();
-    const esc = (e:KeyboardEvent)=>{ if(e.key==='Escape'){ document.removeEventListener('keydown',esc); this.destroy(); onClose(); } };
-    document.addEventListener('keydown', esc);
   }
 
   // --- LEMONADE RHYTHM ---

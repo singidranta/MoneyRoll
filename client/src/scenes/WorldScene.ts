@@ -1016,15 +1016,12 @@ export class WorldScene extends Phaser.Scene {
   private deliverParcel(): void {
     if (!this.hasParcel || !this.activeDeliveryTarget) return;
 
-    const targetKey = this.activeDeliveryTarget.key;
     const slotIdx = this.localInventory.findIndex(i => i === 'parcel');
     if (slotIdx === -1) return;
 
     // Remove parcel
     this.localInventory[slotIdx] = null;
     this.hasParcel = false;
-
-    const target = this.activeDeliveryTarget;
     this.activeDeliveryTarget = null;
     this.currentWeight = calculateInventoryWeight(this.localInventory);
 
