@@ -24,13 +24,16 @@ const game = new Phaser.Game({
   parent: 'game',
 });
 
+// Loading screen is driven by PreloadScene progress + hide on World start.
+// Fallback: if something fails early, still don't leave user stuck forever.
 window.addEventListener('phaser-ready', () => {
-  const loading = document.getElementById('loading');
-  if (loading) loading.classList.add('hidden');
+  // Boot finished — progress bar stays until assets load.
 });
 
 window.addEventListener('error', (e) => {
   console.error('[MoneyRoll] window.error:', e.message);
+  const text = document.getElementById('loading-pct');
+  if (text) text.textContent = 'ошибка загрузки — смотри консоль';
 });
 
 if (isEditor) {
