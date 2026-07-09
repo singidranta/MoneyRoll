@@ -9,12 +9,17 @@ import { World } from './World.js';
 import type { WireMessage } from './World.js';
 import {
   emptyMap,
+  MAP_HEIGHT,
+  MAP_WIDTH,
   parseKey,
   TILE_TYPES,
   type MapDocument,
   type TileType,
 } from '../../shared/map.js';
 
+// ============================================================
+//  SECTION: SERVER CONFIGURATION
+// ============================================================
 const PORT = Number(process.env.PORT ?? 3000);
 const DATA_DIR = path.resolve('data');
 const MAP_FILE = path.join(DATA_DIR, 'map.json');
@@ -22,7 +27,9 @@ const SNAPSHOT_TICK_MS = 50; // 20 Hz
 
 const world = new World();
 
-// ───── Network introspection ─────
+// ============================================================
+//  SECTION: NETWORK INTROSPECTION
+// ============================================================
 
 function listLocalIPs(): Array<{ iface: string; ip: string }> {
   const out: Array<{ iface: string; ip: string }> = [];
@@ -37,7 +44,9 @@ function listLocalIPs(): Array<{ iface: string; ip: string }> {
   return out;
 }
 
-// ───── Map persistence (data/map.json) ─────
+// ============================================================
+//  SECTION: MAP PERSISTENCE
+// ============================================================
 
 async function ensureDataDir(): Promise<void> {
   try {
@@ -52,6 +61,13 @@ async function loadMap(): Promise<MapDocument> {
     const raw = await fs.readFile(MAP_FILE, 'utf8');
     const parsed = JSON.parse(raw) as MapDocument;
     if (parsed.version !== 1) throw new Error(`unsupported version ${parsed.version}`);
+    // Если размер сохраненной карты не совпадает с текущей сборкой — сбрасываем.
+    if (parsed.width !== MAP_WIDTH || parsed.height !== MAP_HEIGHT) {
+      console.warn(
+        `[MoneyRoll][server] saved map size ${parsed.width}x${parsed.height} does not match current ${MAP_WIDTH}x${MAP_HEIGHT}; resetting`
+      );
+      return emptyMap();
+    }
     // Санитайз tiles: только известные типы и валидные ключи.
     const tiles: Record<string, TileType> = {};
     for (const [k, t] of Object.entries(parsed.tiles ?? {})) {
@@ -107,14 +123,16 @@ async function flushMap(): Promise<void> {
   }
 }
 
-// ───── Express app ─────
+// ============================================================
+//  SECTION: EXPRESS APP
+// ============================================================
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '4mb' }));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, uptime: process.uptime(), clients: world.size, version: '0.2.0' });
+  res.json({ ok: true, uptime: process.uptime(), clients: world.size, version: '1.4' });
 });
 
 app.get('/api/network', (_req, res) => {
@@ -131,7 +149,7 @@ app.put('/api/map', async (req, res) => {
     res.status(400).json({ ok: false, error: 'bad version' });
     return;
   }
-  if (body.width !== currentMap.width || body.height !== currentMap.height) {
+  if (body.width !== MAP_WIDTH || body.height !== MAP_HEIGHT) {
     res.status(400).json({ ok: false, error: 'bad size' });
     return;
   }
@@ -156,7 +174,9 @@ app.put('/api/map', async (req, res) => {
   res.json({ ok: true, tiles: Object.keys(tiles).length });
 });
 
-// ───── WebSocket ─────
+// ============================================================
+//  SECTION: WEBSOCKET
+// ============================================================
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
@@ -203,7 +223,9 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-// ───── Snapshot tick (server-authoritative, 20Hz) ─────
+// ============================================================
+//  SECTION: SNAPSHOT TICK
+// ============================================================
 //
 // Раньше был per-event broadcast (после каждого move-сообщения) —
 // это даёт "телепортацию" remote-плееров при пинге >30мс.
@@ -220,7 +242,9 @@ setInterval(() => {
   world.broadcastAllRaw(payload);
 }, SNAPSHOT_TICK_MS);
 
-// ───── Startup ─────
+// ============================================================
+//  SECTION: STARTUP
+// ============================================================
 
 void initMap().then(() => {
   server.listen(PORT, '0.0.0.0', () => {

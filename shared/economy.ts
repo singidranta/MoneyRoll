@@ -1,5 +1,18 @@
+// ============================================================
+//  SECTION: INVENTORY ITEM TYPES
+// ============================================================
+export type InventoryItem =
+  | BottleType
+  | 'bag-adidas'
+  | 'backpack-tourist'
+  | 'shawarma'
+  | 'energy';
+
 export type BottleType = 'water' | 'beer-glass' | 'wine' | 'champagne' | 'bordeaux-1982';
 
+// ============================================================
+//  SECTION: BOTTLE DEFINITIONS
+// ============================================================
 export interface BottleDef {
   id: BottleType;
   name: string;
@@ -10,9 +23,38 @@ export interface BottleDef {
   spriteKey: string;
 }
 
-export const MAX_INVENTORY_WEIGHT = 8.0; // Максимальный переносимый вес (кг)
-export const INVENTORY_SLOTS = 12;       // Сетка инвентаря 3x4 слота
+// ============================================================
+//  SECTION: INVENTORY LIMITS
+// ============================================================
+export const INVENTORY_SLOTS = 12; // Сетка инвентаря 3x4 слота
 
+// ============================================================
+//  SECTION: FOOD & GEAR WEIGHTS
+// ============================================================
+export const FOOD_WEIGHTS: Record<'shawarma' | 'energy', number> = {
+  shawarma: 0.5,
+  energy: 0.3,
+};
+
+export const GEAR_WEIGHTS: Record<'bag-adidas' | 'backpack-tourist', number> = {
+  'bag-adidas': 0.0,
+  'backpack-tourist': 0.0,
+};
+
+// ============================================================
+//  SECTION: BACKPACK TIERS
+// ============================================================
+export const BACKPACK_TIERS: Record<number, { name: string; maxWeight: number }> = {
+  1: { name: 'Карманы', maxWeight: 2.5 },
+  2: { name: 'Сумка Adidas', maxWeight: 15.0 },
+  3: { name: 'Рюкзак туриста', maxWeight: 30.0 },
+};
+
+export const MAX_INVENTORY_WEIGHT = BACKPACK_TIERS[1].maxWeight; // Устаревшая константа для совместимости
+
+// ============================================================
+//  SECTION: BOTTLE DEFINITIONS
+// ============================================================
 export const BOTTLE_TYPES: Record<BottleType, BottleDef> = {
   'water': {
     id: 'water',
@@ -61,6 +103,9 @@ export const BOTTLE_TYPES: Record<BottleType, BottleDef> = {
   }
 };
 
+// ============================================================
+//  SECTION: SERVER-SIDE ENTITIES
+// ============================================================
 // Динамические бутылки, находящиеся на карте в данный момент
 export interface ServerBottle {
   id: string;

@@ -3,6 +3,7 @@ import {
   MAP_WIDTH,
   MAP_HEIGHT,
   TILE_SIZE,
+  TILE_SIZE_HALF,
   cellKey,
   type TileType,
   type MapDocument,
@@ -15,19 +16,25 @@ import {
   getSaveStatus,
 } from '../systems/MapSystem';
 
-const PIXEL_WIDTH = MAP_WIDTH * TILE_SIZE; // 30 * 128 = 3840
+// ============================================================
+//  SECTION: EDITOR CONSTANTS
+// ============================================================
+const PIXEL_WIDTH = MAP_WIDTH * TILE_SIZE;
 const PIXEL_HEIGHT = MAP_HEIGHT * TILE_SIZE;
 
 export class EditorScene extends Phaser.Scene {
+  // ============================================================
+  //  SECTION: STATE
+  // ============================================================
   private mapJson: MapDocument | null = null;
-  
-  // Выбранные инструменты
   private currentTool: 'tile' | 'entity' | 'eraser' = 'tile';
   private selectedTileType: TileType = 'ground-grass';
   private selectedEntityType: 'kiosk' | 'spawner' | 'npc' | 'building' | 'apartment-1' | 'apartment-2' | 'wall' | 'food-cart' | 'clothing-shop' = 'kiosk';
   private currentRotation = 0; // 0, 90, 180, 270
 
-  // Спрайты
+  // ============================================================
+  //  SECTION: SPRITES & UI
+  // ============================================================
   private tileImagesMap = new Map<string, Phaser.GameObjects.Image>();
   private entitySpritesMap = new Map<string, Phaser.GameObjects.GameObject>();
   private ghost!: Phaser.GameObjects.Image;
@@ -35,7 +42,9 @@ export class EditorScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   private coordText!: Phaser.GameObjects.Text;
 
-  // Клавиши перемещения камеры (полёт по карте)
+  // ============================================================
+  //  SECTION: INPUT
+  // ============================================================
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasdKeys!: any;
 
@@ -44,23 +53,18 @@ export class EditorScene extends Phaser.Scene {
   }
 
   create(): void {
+    // ---------- Camera ----------
     this.cameras.main.setBackgroundColor('#0a0a0a');
     this.cameras.main.setBounds(0, 0, PIXEL_WIDTH, PIXEL_HEIGHT);
-
-    // Центрируем камеру по умолчанию
     this.cameras.main.centerOn(PIXEL_WIDTH / 2, PIXEL_HEIGHT / 2);
 
-    // Инициализируем клавиши перемещения камеры
+    // ---------- Input ----------
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.wasdKeys = this.input.keyboard!.addKeys('W,A,S,D') as any;
-
-    // Кастомный курсор
     this.input.setDefaultCursor('crosshair');
-
-    // Отключаем дефолтное контекстное меню на ПКМ
     this.input.mouse!.disableContextMenu();
 
-    // Рисуем сетку
+    // ---------- Grid ----------
     this.drawGridBackground();
 
     // Тонкая обводка по границам карты
@@ -120,8 +124,10 @@ export class EditorScene extends Phaser.Scene {
     console.log('[MoneyRoll] Editor ready!');
   }
 
+  // ============================================================
+  //  SECTION: CAMERA FLIGHT
+  // ============================================================
   update(): void {
-    // ───── Свободный полёт камеры по карте (WASD или Стрелки) ─────
     const speed = 12;
     if (this.wasdKeys.W.isDown || this.cursors.up.isDown) {
       this.cameras.main.scrollY -= speed;
@@ -137,8 +143,11 @@ export class EditorScene extends Phaser.Scene {
     }
   }
 
+  // ============================================================
+  //  SECTION: GRID DRAWING
+  // ============================================================
   private drawGridBackground(): void {
-    // Мелкая сетка (каждые 128px)
+    // Minor grid: every tile
     const minor = this.add.graphics();
     minor.lineStyle(1, 0x222222, 0.4);
     minor.setDepth(0);
@@ -149,7 +158,7 @@ export class EditorScene extends Phaser.Scene {
       minor.lineBetween(0, y * TILE_SIZE, PIXEL_WIDTH, y * TILE_SIZE);
     }
 
-    // Крупная сетка (каждые 10 клеток)
+    // Major grid: every 10 tiles
     const major = this.add.graphics();
     major.lineStyle(2, 0x444444, 0.6);
     major.setDepth(1);
@@ -161,24 +170,29 @@ export class EditorScene extends Phaser.Scene {
     }
   }
 
+  // ============================================================
+  //  SECTION: MAP LOADING
+  // ============================================================
   private async loadInitial(): Promise<void> {
     const map = await loadMap();
     if (!map.rotations) map.rotations = {};
     if (!map.entities) map.entities = {};
-    
+
     this.mapJson = map;
     this.renderAll();
     this.refreshStatus('ready');
   }
 
+  // ============================================================
+  //  SECTION: MAP RENDERING
+  // ============================================================
   private renderAll(): void {
-    // Очищаем тайлы
+    // Cleanup
     for (const img of this.tileImagesMap.values()) {
       img.destroy();
     }
     this.tileImagesMap.clear();
 
-    // Очищаем объекты
     for (const gobj of this.entitySpritesMap.values()) {
       gobj.destroy();
     }
@@ -186,18 +200,17 @@ export class EditorScene extends Phaser.Scene {
 
     if (!this.mapJson) return;
 
-    // 1. Отрисовка тайлов (30х30)
+    // Render tiles
     for (let x = 0; x < MAP_WIDTH; x++) {
       for (let y = 0; y < MAP_HEIGHT; y++) {
         const key = cellKey(x, y);
         const type = this.mapJson.tiles[key] ?? 'ground-grass';
         const rot = this.mapJson.rotations?.[key] ?? 0;
 
-        const spriteKey = 'tile-' + type;
-        const px = x * TILE_SIZE + TILE_SIZE / 2;
-        const py = y * TILE_SIZE + TILE_SIZE / 2;
+        const px = x * TILE_SIZE + TILE_SIZE_HALF;
+        const py = y * TILE_SIZE + TILE_SIZE_HALF;
 
-        const img = this.add.image(px, py, spriteKey);
+        const img = this.add.image(px, py, `tile-${type}`);
         img.setDepth(2);
         img.setAngle(rot);
 
@@ -205,135 +218,144 @@ export class EditorScene extends Phaser.Scene {
       }
     }
 
-    // 2. Отрисовка объектов (entities)
+    // Render entities
     for (const [key, entity] of Object.entries(this.mapJson.entities ?? {})) {
       this.renderEntity(key, entity);
     }
   }
 
+  // ============================================================
+  //  SECTION: ENTITY RENDERING
+  // ============================================================
   private renderEntity(key: string, entity: MapEntity): void {
-    // Удаляем старый спрайт по этому ключу если он был
     const oldSprite = this.entitySpritesMap.get(key);
     if (oldSprite) oldSprite.destroy();
 
-    const px = entity.cellX * TILE_SIZE + TILE_SIZE / 2;
-    const py = entity.cellY * TILE_SIZE + TILE_SIZE / 2;
+    const px = entity.cellX * TILE_SIZE + TILE_SIZE_HALF;
+    const py = entity.cellY * TILE_SIZE + TILE_SIZE_HALF;
 
-    if (entity.type === 'kiosk') {
-      const img = this.add.image(px, py, 'recycle-machine');
-      img.setScale(1.1);
-      img.setAngle(entity.rotation);
-      img.setDepth(100);
-      this.entitySpritesMap.set(key, img);
-    } else if (entity.type === 'food-cart') {
-      const img = this.add.image(px, py, 'food-cart');
-      img.setScale(1.0);
-      img.setAngle(entity.rotation);
-      img.setDepth(100);
-      this.entitySpritesMap.set(key, img);
-    } else if (entity.type === 'clothing-shop') {
-      const img = this.add.image(px, py, 'clothing-shop');
-      img.setScale(1.0);
-      img.setAngle(entity.rotation);
-      img.setDepth(100);
-      this.entitySpritesMap.set(key, img);
-    } else if (entity.type === 'apartment-1') {
-      const img = this.add.image(px, py, 'apartment-1');
-      img.setScale(1.0);
-      img.setAngle(entity.rotation);
-      img.setDepth(100);
-      this.entitySpritesMap.set(key, img);
-    } else if (entity.type === 'apartment-2') {
-      const img = this.add.image(px, py, 'apartment-2');
-      img.setScale(1.0);
-      img.setAngle(entity.rotation);
-      img.setDepth(100);
-      this.entitySpritesMap.set(key, img);
-    } else if (entity.type === 'wall') {
-      const img = this.add.image(px, py, 'wall');
-      img.setScale(1.0);
-      img.setAngle(entity.rotation);
-      img.setDepth(100);
-      this.entitySpritesMap.set(key, img);
-    } else if (entity.type === 'spawner') {
-      // Сделаем визуальный контейнер для спавнера (бутылка по центру + желтый пунктирный круг зоны)
-      const visualContainer = this.add.container(px, py);
-      visualContainer.setDepth(100);
-
-      // Круг зоны спавна (Customizable Territory!)
-      const radiusInCells = entity.properties.spawnRadius ?? 3;
-      const radiusInPixels = radiusInCells * TILE_SIZE;
-
-      const rangeCircle = this.add.graphics();
-      rangeCircle.lineStyle(2, 0xffd700, 0.6);
-      rangeCircle.strokeCircle(0, 0, radiusInPixels);
-
-      // Фоновая зона спавнера
-      const mark = this.add.rectangle(0, 0, 80, 80, 0xffd700, 0.2);
-      mark.setStrokeStyle(2, 0xffd700, 0.8);
-
-      // Иконка бутылки по центру
-      const botImg = this.add.image(0, 0, 'bottle-water');
-      botImg.setScale(0.7);
-
-      // Текст интервала и радиуса зоны
-      const labelText = `Территория спавна\nРадиус: ${radiusInCells} кл (${entity.properties.spawnInterval ?? 15}с)`;
-      const label = this.add.text(0, -60, labelText, {
-        fontFamily: 'monospace',
-        fontSize: '11px',
-        color: '#ffd700',
-        backgroundColor: '#000000aa',
-        align: 'center',
-        padding: { x: 5, y: 3 }
-      });
-      label.setOrigin(0.5);
-
-      visualContainer.add([rangeCircle, mark, botImg, label]);
-      this.entitySpritesMap.set(key, visualContainer);
-    } else if (entity.type === 'npc') {
-      // NPC заглушка (синий прямоугольник + надпись NPC)
-      const visualContainer = this.add.container(px, py);
-      visualContainer.setDepth(100);
-
-      const body = this.add.rectangle(0, 0, 48, 48, 0x00ccff, 0.8);
-      body.setStrokeStyle(2, 0xffffff);
-
-      const label = this.add.text(0, -35, entity.properties.label || 'NPC', {
-        fontFamily: 'monospace',
-        fontSize: '11px',
-        color: '#00ccff',
-        backgroundColor: '#000000aa',
-        padding: { x: 4, y: 2 }
-      });
-      label.setOrigin(0.5);
-
-      visualContainer.add([body, label]);
-      this.entitySpritesMap.set(key, visualContainer);
-    } else if (entity.type === 'building') {
-      // Декоративное здание (серый куб + надпись)
-      const visualContainer = this.add.container(px, py);
-      visualContainer.setDepth(100);
-
-      const body = this.add.rectangle(0, 0, 110, 110, 0x777788, 0.9);
-      body.setStrokeStyle(3, 0xbbbbcc);
-
-      const label = this.add.text(0, 0, entity.properties.label || 'ЗДАНИЕ', {
-        fontFamily: 'monospace',
-        fontSize: '13px',
-        color: '#ffffff',
-        fontStyle: 'bold'
-      });
-      label.setOrigin(0.5);
-
-      visualContainer.add([body, label]);
-      this.entitySpritesMap.set(key, visualContainer);
+    switch (entity.type) {
+      case 'kiosk':
+      case 'food-cart':
+      case 'clothing-shop':
+      case 'apartment-1':
+      case 'apartment-2':
+      case 'wall':
+        this.renderImageEntity(
+          key,
+          entity,
+          px,
+          py,
+          entity.type,
+          entity.type === 'kiosk' ? 1.1 : 1.0
+        );
+        break;
+      case 'spawner':
+        this.renderSpawner(key, entity, px, py);
+        break;
+      case 'npc':
+        this.renderNpc(key, entity, px, py);
+        break;
+      case 'building':
+        this.renderBuilding(key, entity, px, py);
+        break;
     }
   }
 
+  private renderImageEntity(
+    key: string,
+    entity: MapEntity,
+    px: number,
+    py: number,
+    texture: string,
+    scale: number
+  ): void {
+    const img = this.add.image(px, py, texture);
+    img.setScale(scale);
+    img.setAngle(entity.rotation);
+    img.setDepth(100);
+    this.entitySpritesMap.set(key, img);
+  }
+
+  private renderSpawner(key: string, entity: MapEntity, px: number, py: number): void {
+    const radiusInCells = entity.properties.spawnRadius ?? 3;
+    const radiusInPixels = radiusInCells * TILE_SIZE;
+    const interval = entity.properties.spawnInterval ?? 15;
+
+    const visualContainer = this.add.container(px, py);
+    visualContainer.setDepth(100);
+
+    const rangeCircle = this.add.graphics();
+    rangeCircle.lineStyle(2, 0xffd700, 0.6);
+    rangeCircle.strokeCircle(0, 0, radiusInPixels);
+
+    const mark = this.add.rectangle(0, 0, 80, 80, 0xffd700, 0.2);
+    mark.setStrokeStyle(2, 0xffd700, 0.8);
+
+    const botImg = this.add.image(0, 0, 'bottle-water');
+    botImg.setScale(0.7);
+
+    const labelText = `Территория спавна\nРадиус: ${radiusInCells} кл (${interval}с)`;
+    const label = this.add.text(0, -60, labelText, {
+      fontFamily: 'monospace',
+      fontSize: '11px',
+      color: '#ffd700',
+      backgroundColor: '#000000aa',
+      align: 'center',
+      padding: { x: 5, y: 3 }
+    });
+    label.setOrigin(0.5);
+
+    visualContainer.add([rangeCircle, mark, botImg, label]);
+    this.entitySpritesMap.set(key, visualContainer);
+  }
+
+  private renderNpc(key: string, entity: MapEntity, px: number, py: number): void {
+    const visualContainer = this.add.container(px, py);
+    visualContainer.setDepth(100);
+
+    const body = this.add.rectangle(0, 0, 48, 48, 0x00ccff, 0.8);
+    body.setStrokeStyle(2, 0xffffff);
+
+    const label = this.add.text(0, -35, entity.properties.label || 'NPC', {
+      fontFamily: 'monospace',
+      fontSize: '11px',
+      color: '#00ccff',
+      backgroundColor: '#000000aa',
+      padding: { x: 4, y: 2 }
+    });
+    label.setOrigin(0.5);
+
+    visualContainer.add([body, label]);
+    this.entitySpritesMap.set(key, visualContainer);
+  }
+
+  private renderBuilding(key: string, entity: MapEntity, px: number, py: number): void {
+    const visualContainer = this.add.container(px, py);
+    visualContainer.setDepth(100);
+
+    const body = this.add.rectangle(0, 0, 110, 110, 0x777788, 0.9);
+    body.setStrokeStyle(3, 0xbbbbcc);
+
+    const label = this.add.text(0, 0, entity.properties.label || 'ЗДАНИЕ', {
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      color: '#ffffff',
+      fontStyle: 'bold'
+    });
+    label.setOrigin(0.5);
+
+    visualContainer.add([body, label]);
+    this.entitySpritesMap.set(key, visualContainer);
+  }
+
+  // ============================================================
+  //  SECTION: INPUT HANDLING
+  // ============================================================
   private handlePointerMove(pointer: Phaser.Input.Pointer): void {
     if (!this.mapJson) return;
 
-    // ───── Свободное перетаскивание карты мышкой (Зажатая Space + ЛКМ или Средняя Кнопка Мыши) ─────
+    // Drag camera with Space + LMB or middle mouse button
     if (pointer.isDown && (pointer.button === 1 || this.input.keyboard!.addKey('SPACE').isDown)) {
       this.cameras.main.scrollX -= (pointer.x - pointer.prevPosition.x);
       this.cameras.main.scrollY -= (pointer.y - pointer.prevPosition.y);
@@ -346,7 +368,7 @@ export class EditorScene extends Phaser.Scene {
       this.coordText.setText('cell: —, —');
       return;
     }
-    
+
     this.showGhost(cell.x, cell.y);
     this.coordText.setText(`Клетка: ${cell.x}, ${cell.y}  ·  Инструмент: ${this.currentTool.toUpperCase()}`);
   }
@@ -368,33 +390,28 @@ export class EditorScene extends Phaser.Scene {
     if (pointer.button !== 0) return; // Только левый клик для добавления
 
     if (this.currentTool === 'tile') {
-      // Ставим тайл
       this.mapJson.tiles[key] = this.selectedTileType;
       if (!this.mapJson.rotations) this.mapJson.rotations = {};
       this.mapJson.rotations[key] = this.currentRotation;
 
-      // Визуальное обновление тайла
-      const spriteKey = 'tile-' + this.selectedTileType;
+      const spriteKey = `tile-${this.selectedTileType}`;
       const existingImg = this.tileImagesMap.get(key);
       if (existingImg) {
         existingImg.setTexture(spriteKey);
         existingImg.setAngle(this.currentRotation);
       } else {
-        const px = cell.x * TILE_SIZE + TILE_SIZE / 2;
-        const py = cell.y * TILE_SIZE + TILE_SIZE / 2;
+        const px = cell.x * TILE_SIZE + TILE_SIZE_HALF;
+        const py = cell.y * TILE_SIZE + TILE_SIZE_HALF;
         const img = this.add.image(px, py, spriteKey);
         img.setDepth(2);
         img.setAngle(this.currentRotation);
         this.tileImagesMap.set(key, img);
       }
-
     } else if (this.currentTool === 'entity') {
-      // Получаем свойства из HTML Sidebar (включая customizable spawn territory!)
       const intervalVal = parseInt((document.getElementById('prop-interval') as HTMLInputElement)?.value || '15');
       const maxVal = parseInt((document.getElementById('prop-max') as HTMLInputElement)?.value || '3');
       const radiusVal = parseInt((document.getElementById('prop-radius') as HTMLInputElement)?.value || '3');
 
-      // Создаем объект MapEntity
       const newEntity: MapEntity = {
         id: `entity_${Math.random().toString(36).slice(2, 10)}`,
         type: this.selectedEntityType,
@@ -411,32 +428,26 @@ export class EditorScene extends Phaser.Scene {
 
       if (!this.mapJson.entities) this.mapJson.entities = {};
       this.mapJson.entities[key] = newEntity;
-
-      // Рисуем объект
       this.renderEntity(key, newEntity);
     }
 
-    // Сохраняем на сервер
     saveMapDebounced(this.mapJson, 600);
     this.refreshStatus('сохранение…');
   }
 
   private deleteEntityAt(key: string): void {
     if (!this.mapJson) return;
-    
-    // Удаляем из базы
+
     if (this.mapJson.entities && this.mapJson.entities[key]) {
       delete this.mapJson.entities[key];
     }
 
-    // Удаляем спрайт
     const sprite = this.entitySpritesMap.get(key);
     if (sprite) {
       sprite.destroy();
       this.entitySpritesMap.delete(key);
     }
 
-    // Если ластик, также очищаем тайл (делаем его травой по дефолту)
     if (this.currentTool === 'eraser') {
       this.mapJson.tiles[key] = 'ground-grass';
       const tileImg = this.tileImagesMap.get(key);
@@ -472,8 +483,8 @@ export class EditorScene extends Phaser.Scene {
   }
 
   private showGhost(cellX: number, cellY: number): void {
-    const px = cellX * TILE_SIZE + TILE_SIZE / 2;
-    const py = cellY * TILE_SIZE + TILE_SIZE / 2;
+    const px = cellX * TILE_SIZE + TILE_SIZE_HALF;
+    const py = cellY * TILE_SIZE + TILE_SIZE_HALF;
 
     let spriteKey = 'tile-ground-grass';
     
@@ -532,7 +543,8 @@ export class EditorScene extends Phaser.Scene {
   private hudContent(): string {
     const count = this.mapJson ? Object.keys(this.mapJson.tiles).length : 0;
     const objCount = this.mapJson ? Object.keys(this.mapJson.entities ?? {}).length : 0;
-    return `РЕДАКТОР · Клеток: ${count}/900 · Объектов: ${objCount}\nWASD / Стрелочки — Свободный полёт по карте!\nЗажатый Space + ЛКМ — Перетаскивание камеры!`;
+    const totalCells = MAP_WIDTH * MAP_HEIGHT;
+    return `РЕДАКТОР · Клеток: ${count}/${totalCells} · Объектов: ${objCount}\nWASD / Стрелочки — Свободный полёт по карте!\nЗажатый Space + ЛКМ — Перетаскивание камеры!`;
   }
 
   private refreshStatus(text: string): void {
@@ -543,8 +555,9 @@ export class EditorScene extends Phaser.Scene {
     this.hudText.setText(this.hudContent());
   }
 
-  // ───── HTML Sidebar UI Panel ─────
-
+  // ============================================================
+  //  SECTION: SIDEBAR UI
+  // ============================================================
   private createSidebarUI(): void {
     this.removeSidebarUI();
 

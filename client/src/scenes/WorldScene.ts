@@ -1,21 +1,43 @@
 import Phaser from 'phaser';
 import { connectNetcode, type NetcodeClient, type NetcodeMessage } from '../systems/Netcode';
 import { loadMap } from '../systems/MapSystem';
-import { BOTTLE_TYPES, INVENTORY_SLOTS, type BottleType, type ServerBottle } from '../../../shared/economy';
-import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, type MapDocument } from '../../../shared/map';
+import {
+  BACKPACK_TIERS,
+  BOTTLE_TYPES,
+  INVENTORY_SLOTS,
+  type InventoryItem,
+  type BottleType,
+  type ServerBottle,
+} from '../../../shared/economy';
+import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, TILE_SIZE_HALF, type MapDocument } from '../../../shared/map';
 import { SoundEffects } from '../systems/SoundEffects';
 
-const MAP_PIXEL_W = MAP_WIDTH * TILE_SIZE; // 20 * 128 = 2560
+// ============================================================
+//  SECTION: WORLD CONSTANTS
+// ============================================================
+const MAP_PIXEL_W = MAP_WIDTH * TILE_SIZE;
 const MAP_PIXEL_H = MAP_HEIGHT * TILE_SIZE;
 const SEND_INTERVAL_MS = 50;
 const SNAPSHOT_INTERP_DELAY_MS = 100;
 const REMOTE_TINT = 0xffaacc;
 const DEFAULT_SPAWN = { x: 400, y: 300 };
 
-// Скорости уменьшены на 50% в соответствии со уменьшенными масштабами персонажа!
 const BASE_WALK_SPEED = 130;
 const BASE_SPRINT_SPEED = 200;
 
+const PLAYER_SCALE = 0.42;
+const PLAYER_BODY_SIZE = 24;
+const PLAYER_BODY_OFFSET_X = 20;
+const PLAYER_BODY_OFFSET_Y = 40;
+
+const OBSTACLE_SCALE = 0.5;
+const BOTTLE_PICKUP_RADIUS = 30;
+const INTERACT_RADIUS = 90;
+const PROMPT_OFFSET_Y = 60;
+
+// ============================================================
+//  SECTION: NETCODE TYPES
+// ============================================================
 type PeerSnapshot = { id: string; x: number; y: number };
 type SnapshotEntry = {
   localT: number;
@@ -23,71 +45,68 @@ type SnapshotEntry = {
 };
 
 export class WorldScene extends Phaser.Scene {
-  private player!: Phaser.GameObjects.Sprite;
+  // ============================================================
+  //  SECTION: INPUT
+  // ============================================================
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<string, Phaser.Input.Keyboard.Key>;
   private keyE!: Phaser.Input.Keyboard.Key;
   private keyI!: Phaser.Input.Keyboard.Key;
   private keyTab!: Phaser.Input.Keyboard.Key;
-  
+
+  // ============================================================
+  //  SECTION: PLAYER STATE
+  // ============================================================
+  private player!: Phaser.GameObjects.Sprite;
+  private localMoney = 5.0;
+  private localInventory: (InventoryItem | null)[] = Array(INVENTORY_SLOTS).fill(null);
+  private currentWeight = 0.0;
+  private backpackTier = 1;
+  private equippedBag: 'bag-adidas' | 'backpack-tourist' | null = null;
+  private hasJacket = false;
+  private hasSneakers = false;
+  private hasCrown = false;
+  private stamina = 100.0;
+  private isExhausted = false;
+  private energyDrinkBuffTimer = 0.0;
+  private shawarmaBuffTimer = 0.0;
+  private footstepTimer = 0;
+
+  // ============================================================
+  //  SECTION: NETCODE
+  // ============================================================
   private netcode?: NetcodeClient;
   private lastSentAt = 0;
   private myId: string | null = null;
   private remotePlayers = new Map<string, Phaser.GameObjects.Sprite>();
   private snapshotBuffer: SnapshotEntry[] = [];
+  private simulatedLagMs = 0;
 
-  // Физический коллайдер для препятствий
-  private obstaclesCollider!: Phaser.Physics.Arcade.Collider;
-
-  // Игровая логика и сущности
-  private localMoney = 5.0;
-  private localInventory: (BottleType | 'bag-adidas' | 'backpack-tourist' | 'shawarma' | 'energy' | null)[] = Array(INVENTORY_SLOTS).fill(null);
-  private currentWeight = 0.0;
-  private backpackTier = 1; // 1 = Без сумки (4 слота, 2.5кг), 2 = Спортивная сумка Adidas (8 слотов, 15кг), 3 = Рюкзак туриста (12 слотов, 30кг)
-
-  // Экипированная сумка (для инвентаря)
-  private equippedBag: 'bag-adidas' | 'backpack-tourist' | null = null;
-
-  // Экипированная одежда (для бонусов!)
-  private hasJacket = false; // Куртка Adidas (+50% регенерация энергии)
-  private hasSneakers = false; // Кроссовки Nike (+30% скорость)
-  private hasCrown = false; // Корона (Косметика)
-
-  // Система выносливости (Stamina)
-  private stamina = 100.0;
-  private isExhausted = false;
-
-  // Временные баффы еды
-  private energyDrinkBuffTimer = 0.0;
-  private shawarmaBuffTimer = 0.0;
-
-  // Таймер шагов (звук)
-  private footstepTimer = 0;
-
+  // ============================================================
+  //  SECTION: MAP & ENTITIES
+  // ============================================================
   private mapJson: MapDocument | null = null;
   private groundTileSprite?: Phaser.GameObjects.TileSprite;
-  
   private bottlesMap = new Map<string, Phaser.GameObjects.Image>();
   private kiosksSpritesMap = new Map<string, Phaser.GameObjects.GameObject>();
   private npcSpritesList: Phaser.GameObjects.GameObject[] = [];
   private staticTileImages: Phaser.GameObjects.Image[] = [];
 
-  // Физика (Препятствия/Коллизии)
+  // ============================================================
+  //  SECTION: PHYSICS
+  // ============================================================
   private obstaclesGroup!: Phaser.Physics.Arcade.StaticGroup;
+  private obstaclesCollider!: Phaser.Physics.Arcade.Collider;
 
-  // Неткод-фишка: симуляция пинга
-  private simulatedLagMs = 0;
-
-  // HTML UI элементы
+  // ============================================================
+  //  SECTION: UI
+  // ============================================================
   private hudOverlayEl?: HTMLDivElement;
   private dashboardPanelEl?: HTMLDivElement;
-
   private isInventoryOpen = false;
   private nearKioskId: string | null = null;
-  private nearFoodCartEntity: any = null; // Текущий ларёк рядом
-  private nearClothingShopEntity: any = null; // Текущий магазин одежды рядом
-
-  // Подсвечиваемая интерактивная кнопка [E] над объектом на карте!
+  private nearFoodCartEntity: any = null;
+  private nearClothingShopEntity: any = null;
   private usePrompt!: Phaser.GameObjects.Text;
 
   constructor() {
@@ -100,13 +119,15 @@ export class WorldScene extends Phaser.Scene {
       console.error('[MoneyRoll] клавиатура недоступна');
       return;
     }
+
+    // ---------- Input ----------
     this.cursors = kb.createCursorKeys();
     this.wasd = kb.addKeys('W,A,S,D') as Record<string, Phaser.Input.Keyboard.Key>;
     this.keyE = kb.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.keyI = kb.addKey(Phaser.Input.Keyboard.KeyCodes.I);
     this.keyTab = kb.addKey(Phaser.Input.Keyboard.KeyCodes.TAB);
 
-    // Фоновая трава по всей карте 20х20 в качестве основы
+    // ---------- Background ----------
     this.groundTileSprite = this.add.tileSprite(
       MAP_PIXEL_W / 2,
       MAP_PIXEL_H / 2,
@@ -116,51 +137,25 @@ export class WorldScene extends Phaser.Scene {
     );
     this.groundTileSprite.setDepth(0);
 
-    // Персонаж — уменьшен на 50% (scale 0.42 вместо 0.85!)
+    // ---------- Player sprite & animations ----------
     this.player = this.add.sprite(DEFAULT_SPAWN.x, DEFAULT_SPAWN.y, 'player-sprites', 0);
-    this.player.setScale(0.42);
+    this.player.setScale(PLAYER_SCALE);
     this.player.setDepth(500);
 
-    // Создаем анимации ходьбы из атласа spritesheet
-    if (!this.anims.exists('walk-down')) {
-      this.anims.create({
-        key: 'walk-down',
-        frames: this.anims.generateFrameNumbers('player-sprites', { start: 0, end: 3 }),
-        frameRate: 10,
-        repeat: -1
-      });
-      this.anims.create({
-        key: 'walk-left',
-        frames: this.anims.generateFrameNumbers('player-sprites', { start: 4, end: 7 }),
-        frameRate: 10,
-        repeat: -1
-      });
-      this.anims.create({
-        key: 'walk-right',
-        frames: this.anims.generateFrameNumbers('player-sprites', { start: 8, end: 11 }),
-        frameRate: 10,
-        repeat: -1
-      });
-      this.anims.create({
-        key: 'walk-up',
-        frames: this.anims.generateFrameNumbers('player-sprites', { start: 12, end: 15 }),
-        frameRate: 10,
-        repeat: -1
-      });
-    }
+    this.createPlayerAnimations();
 
-    // Инициализируем физику для игрока (размеры уменьшены соразмерно масштабу!)
+    // ---------- Player physics ----------
     this.physics.add.existing(this.player);
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setCollideWorldBounds(true);
-    body.setSize(24, 24); // Мягкий и компактный хитбокс
-    body.setOffset(20, 40);
+    body.setSize(PLAYER_BODY_SIZE, PLAYER_BODY_SIZE);
+    body.setOffset(PLAYER_BODY_OFFSET_X, PLAYER_BODY_OFFSET_Y);
 
-    // Инициализируем статическую группу для физических коллизий (Стены, Квартиры)
+    // ---------- Obstacles physics ----------
     this.obstaclesGroup = this.physics.add.staticGroup();
     this.obstaclesCollider = this.physics.add.collider(this.player, this.obstaclesGroup);
 
-    // Подсвечиваемая интерактивная кнопка [E] над объектом взаимодействия!
+    // ---------- Interaction prompt ----------
     this.usePrompt = this.add.text(0, 0, '  [ E ]  ', {
       fontFamily: 'monospace',
       fontSize: '22px',
@@ -174,7 +169,6 @@ export class WorldScene extends Phaser.Scene {
     this.usePrompt.setDepth(1000);
     this.usePrompt.setVisible(false);
 
-    // Пульсирующий сочный эффект для [E]
     this.tweens.add({
       targets: this.usePrompt,
       scale: 1.15,
@@ -184,44 +178,70 @@ export class WorldScene extends Phaser.Scene {
       ease: 'Sine.easeInOut'
     });
 
-    // Настройка камеры (в режиме FIT она идеально центрирована!)
+    // ---------- Camera ----------
     this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
     this.cameras.main.setBackgroundColor('#0a0a0a');
     this.cameras.main.setBounds(0, 0, MAP_PIXEL_W, MAP_PIXEL_H);
 
-    // Подключение к серверу
+    // ---------- Netcode ----------
     this.netcode = connectNetcode((msg) => this.handleServerMessage(msg));
-
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.netcode?.close();
       this.destroyHTMLOverlays();
     });
 
-    // Обработка кнопки L для неткод симуляции
     kb.on('keydown-L', () => {
-      if (this.simulatedLagMs === 0) {
-        this.simulatedLagMs = 150;
-      } else if (this.simulatedLagMs === 150) {
-        this.simulatedLagMs = 350;
-      } else {
-        this.simulatedLagMs = 0;
-      }
-      this.showFloatingText(
-        `Неткод: симулируемый лаг = ${this.simulatedLagMs}мс`,
-        this.player.x,
-        this.player.y - 40,
-        '#ff9900'
-      );
+      this.cycleSimulatedLag();
     });
 
-    // Создание HTML HUD
+    // ---------- UI ----------
     this.createHTMLHUD();
 
+    // ---------- Map data ----------
     void this.loadMapData();
 
     console.log('[MoneyRoll] World ready. I — инвентарь, E — автомат сдачи, L — пинг.');
   }
 
+  // ============================================================
+  //  SECTION: PLAYER ANIMATIONS
+  // ============================================================
+  private createPlayerAnimations(): void {
+    if (this.anims.exists('walk-down')) return;
+
+    const dirs = ['down', 'left', 'right', 'up'] as const;
+    for (let i = 0; i < dirs.length; i++) {
+      this.anims.create({
+        key: `walk-${dirs[i]}`,
+        frames: this.anims.generateFrameNumbers('player-sprites', { start: i * 4, end: i * 4 + 3 }),
+        frameRate: 10,
+        repeat: -1
+      });
+    }
+  }
+
+  // ============================================================
+  //  SECTION: NETCODE SIMULATION
+  // ============================================================
+  private cycleSimulatedLag(): void {
+    if (this.simulatedLagMs === 0) {
+      this.simulatedLagMs = 150;
+    } else if (this.simulatedLagMs === 150) {
+      this.simulatedLagMs = 350;
+    } else {
+      this.simulatedLagMs = 0;
+    }
+    this.showFloatingText(
+      `Неткод: симулируемый лаг = ${this.simulatedLagMs}мс`,
+      this.player.x,
+      this.player.y - 40,
+      '#ff9900'
+    );
+  }
+
+  // ============================================================
+  //  SECTION: MAP LOADING
+  // ============================================================
   private async loadMapData(): Promise<void> {
     try {
       this.mapJson = await loadMap();
@@ -232,42 +252,51 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  // ============================================================
+  //  SECTION: MAP TILE RENDERING
+  // ============================================================
   private renderMapTiles(): void {
     if (!this.mapJson) return;
 
-    // Очищаем старые тайлы
+    // Cleanup old tiles
     for (const img of this.staticTileImages) {
       img.destroy();
     }
     this.staticTileImages = [];
 
-    // Отрисовываем тайлы поверх основы
+    // Draw non-grass tiles over the background
     for (const [key, type] of Object.entries(this.mapJson.tiles)) {
-      const parts = key.split(',');
-      const x = Number(parts[0]);
-      const y = Number(parts[1]);
-      if (Number.isInteger(x) && Number.isInteger(y)) {
-        const rotation = this.mapJson.rotations?.[key] ?? 0;
-        const px = x * TILE_SIZE + TILE_SIZE / 2;
-        const py = y * TILE_SIZE + TILE_SIZE / 2;
-        
-        const spriteKey = `tile-${type}`;
-        
-        if (type !== 'ground-grass') {
-          const img = this.add.image(px, py, spriteKey);
-          img.setDepth(1);
-          img.setAngle(rotation);
-          this.staticTileImages.push(img);
-        }
-      }
+      const pos = this.parseCellKey(key);
+      if (!pos) continue;
+      if (type === 'ground-grass') continue;
+
+      const rotation = this.mapJson.rotations?.[key] ?? 0;
+      const px = pos.x * TILE_SIZE + TILE_SIZE_HALF;
+      const py = pos.y * TILE_SIZE + TILE_SIZE_HALF;
+      const img = this.add.image(px, py, `tile-${type}`);
+      img.setDepth(1);
+      img.setAngle(rotation);
+      this.staticTileImages.push(img);
     }
   }
 
+  private parseCellKey(key: string): { x: number; y: number } | null {
+    const parts = key.split(',');
+    if (parts.length !== 2) return null;
+    const x = Number(parts[0]);
+    const y = Number(parts[1]);
+    if (!Number.isInteger(x) || !Number.isInteger(y)) return null;
+    return { x, y };
+  }
+
+  // ============================================================
+  //  SECTION: MAP ENTITY RENDERING
+  // ============================================================
   private renderMapEntities(): void {
     if (!this.mapJson) return;
     if (!this.mapJson.entities) this.mapJson.entities = {};
 
-    // Очищаем старые спрайты объектов
+    // Cleanup old sprites
     for (const k of this.kiosksSpritesMap.values()) {
       k.destroy();
     }
@@ -278,7 +307,7 @@ export class WorldScene extends Phaser.Scene {
     }
     this.npcSpritesList = [];
 
-    // Полностью уничтожаем старый коллайдер и физическую группу коллизий
+    // Recreate the obstacle physics group
     if (this.obstaclesCollider) {
       this.obstaclesCollider.destroy();
     }
@@ -288,77 +317,105 @@ export class WorldScene extends Phaser.Scene {
     this.obstaclesGroup = this.physics.add.staticGroup();
     this.obstaclesCollider = this.physics.add.collider(this.player, this.obstaclesGroup);
 
-    // Рендерим сущности из единой карты
     for (const entity of Object.values(this.mapJson.entities)) {
-      const px = entity.cellX * TILE_SIZE + TILE_SIZE / 2;
-      const py = entity.cellY * TILE_SIZE + TILE_SIZE / 2;
+      const px = entity.cellX * TILE_SIZE + TILE_SIZE_HALF;
+      const py = entity.cellY * TILE_SIZE + TILE_SIZE_HALF;
 
-      if (entity.type === 'kiosk') {
-        const kioskSprite = this.add.image(px, py, 'recycle-machine');
-        kioskSprite.setScale(0.58); // Уменьшено на 50%!
-        kioskSprite.setDepth(100);
-        kioskSprite.setAngle(entity.rotation);
-
-        const glow = this.add.graphics();
-        glow.fillStyle(0x00ff66, 0.08);
-        glow.fillCircle(px, py, 70); // Уменьшено на 50%!
-        glow.setDepth(10);
-
-        this.kiosksSpritesMap.set(entity.id, kioskSprite);
-      } else if (entity.type === 'food-cart') {
-        const kioskSprite = this.add.image(px, py, 'food-cart');
-        kioskSprite.setScale(0.5); // Уменьшено на 50%!
-        kioskSprite.setDepth(100);
-        kioskSprite.setAngle(entity.rotation);
-
-        this.kiosksSpritesMap.set(entity.id, kioskSprite);
-      } else if (entity.type === 'clothing-shop') {
-        // Рендерим магазин одежды на карте!
-        const kioskSprite = this.add.image(px, py, 'clothing-shop');
-        kioskSprite.setScale(0.5); // Уменьшено на 50%!
-        kioskSprite.setDepth(100);
-        kioskSprite.setAngle(entity.rotation);
-
-        this.kiosksSpritesMap.set(entity.id, kioskSprite);
-      } else if (entity.type === 'apartment-1' || entity.type === 'apartment-2' || entity.type === 'wall' || entity.type === 'building') {
-        // Твердые препятствия (Квартиры, Стены) — создаем вручную и добавляем статические тела
-        const spriteKey = entity.type;
-        const obstacle = this.add.image(px, py, spriteKey);
-        obstacle.setScale(0.5); // Уменьшено на 50%!
-        obstacle.setAngle(entity.rotation);
-        obstacle.setDepth(90);
-        
-        this.physics.add.existing(obstacle, true); // true = static!
-        const oBody = obstacle.body as Phaser.Physics.Arcade.StaticBody;
-
-        // Строгая и стабильная коллизия по размеру уменьшенной сетки (64x64 вместо 128x128!)
-        oBody.setSize(64, 64);
-        oBody.setOffset(32, 32);
-        oBody.updateFromGameObject();
-
-        this.obstaclesGroup.add(obstacle);
-      } else if (entity.type === 'npc') {
-        const npcContainer = this.add.container(px, py);
-        npcContainer.setDepth(101);
-
-        const body = this.add.rectangle(0, 0, 24, 24, 0x00ccff); // Уменьшено на 50%!
-        body.setStrokeStyle(1, 0xffffff);
-
-        const label = this.add.text(0, -20, entity.properties.label || 'NPC', {
-          fontFamily: 'monospace',
-          fontSize: '9px',
-          color: '#00ccff',
-          backgroundColor: '#000000aa',
-          padding: { x: 3, y: 1 }
-        }).setOrigin(0.5);
-
-        npcContainer.add([body, label]);
-        this.npcSpritesList.push(npcContainer);
+      switch (entity.type) {
+        case 'kiosk':
+          this.renderKiosk(entity, px, py);
+          break;
+        case 'food-cart':
+          this.renderFoodCart(entity, px, py);
+          break;
+        case 'clothing-shop':
+          this.renderClothingShop(entity, px, py);
+          break;
+        case 'apartment-1':
+        case 'apartment-2':
+        case 'wall':
+        case 'building':
+          this.renderObstacle(entity, px, py);
+          break;
+        case 'npc':
+          this.renderNpc(entity, px, py);
+          break;
       }
     }
   }
 
-  // ───── Netcode ─────
+  private renderKiosk(entity: any, px: number, py: number): void {
+    const sprite = this.add.image(px, py, 'recycle-machine');
+    sprite.setScale(0.58);
+    sprite.setDepth(100);
+    sprite.setAngle(entity.rotation);
+
+    const glow = this.add.graphics();
+    glow.fillStyle(0x00ff66, 0.08);
+    glow.fillCircle(px, py, 70);
+    glow.setDepth(10);
+
+    this.kiosksSpritesMap.set(entity.id, sprite);
+  }
+
+  private renderFoodCart(entity: any, px: number, py: number): void {
+    const sprite = this.add.image(px, py, 'food-cart');
+    sprite.setScale(OBSTACLE_SCALE);
+    sprite.setDepth(100);
+    sprite.setAngle(entity.rotation);
+    this.kiosksSpritesMap.set(entity.id, sprite);
+  }
+
+  private renderClothingShop(entity: any, px: number, py: number): void {
+    const sprite = this.add.image(px, py, 'clothing-shop');
+    sprite.setScale(OBSTACLE_SCALE);
+    sprite.setDepth(100);
+    sprite.setAngle(entity.rotation);
+    this.kiosksSpritesMap.set(entity.id, sprite);
+  }
+
+  // ============================================================
+  //  SECTION: OBSTACLE COLLISION FIX
+  // ============================================================
+  private renderObstacle(entity: any, px: number, py: number): void {
+    const spriteKey = this.textures.exists(entity.type) ? entity.type : 'apartment-1';
+    const obstacle = this.physics.add.staticImage(px, py, spriteKey);
+    obstacle.setScale(OBSTACLE_SCALE);
+    obstacle.setAngle(entity.rotation);
+    obstacle.setDepth(90);
+
+    const body = obstacle.body as Phaser.Physics.Arcade.StaticBody;
+    // Static bodies in Phaser do not account for the game object's origin automatically.
+    // displayWidth/height already include the scale, so the body exactly matches the sprite.
+    body.setSize(obstacle.displayWidth, obstacle.displayHeight);
+    body.setOffset(0, 0);
+    obstacle.refreshBody();
+
+    this.obstaclesGroup.add(obstacle);
+  }
+
+  private renderNpc(entity: any, px: number, py: number): void {
+    const container = this.add.container(px, py);
+    container.setDepth(101);
+
+    const body = this.add.rectangle(0, 0, 24, 24, 0x00ccff);
+    body.setStrokeStyle(1, 0xffffff);
+
+    const label = this.add.text(0, -20, entity.properties.label || 'NPC', {
+      fontFamily: 'monospace',
+      fontSize: '9px',
+      color: '#00ccff',
+      backgroundColor: '#000000aa',
+      padding: { x: 3, y: 1 }
+    }).setOrigin(0.5);
+
+    container.add([body, label]);
+    this.npcSpritesList.push(container);
+  }
+
+  // ============================================================
+  //  SECTION: NETCODE MESSAGE HANDLERS
+  // ============================================================
 
   private handleServerMessage(msg: NetcodeMessage): void {
     if (this.simulatedLagMs > 0) {
@@ -601,7 +658,9 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  // ───── Movement & Interaction ─────
+  // ============================================================
+  //  SECTION: MOVEMENT & INTERACTION
+  // ============================================================
 
   update(_time: number, delta: number): void {
     const now = performance.now();
@@ -638,7 +697,7 @@ export class WorldScene extends Phaser.Scene {
 
     // Логика выносливости (Куртка Adidas дает +50% регенерации выносливости!)
     if (isSprinting && this.shawarmaBuffTimer <= 0) {
-      const maxLimit = this.backpackTier === 1 ? 2.5 : this.backpackTier === 2 ? 15.0 : 30.0;
+      const maxLimit = (BACKPACK_TIERS[this.backpackTier] ?? BACKPACK_TIERS[1]).maxWeight;
       const drainRate = 18 * (1 + this.currentWeight / maxLimit);
       this.stamina = Math.max(0, this.stamina - drainRate * dt);
       if (this.stamina === 0) {
@@ -690,18 +749,16 @@ export class WorldScene extends Phaser.Scene {
 
     this.updateHUDUI();
 
-    // Сбор бутылок (бутылки теперь уменьшены на 50%! Шкала пересечения уменьшена до 30 пикселей)
+    // Bottle pickup
     for (const [id, img] of this.bottlesMap.entries()) {
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, img.x, img.y);
-      if (dist < 30) {
-        if (img.visible) {
-          img.setVisible(false);
-          this.sendGameMessage({ type: 'pickup-bottle', bottleId: id });
-        }
+      if (dist < BOTTLE_PICKUP_RADIUS && img.visible) {
+        img.setVisible(false);
+        this.sendGameMessage({ type: 'pickup-bottle', bottleId: id });
       }
     }
 
-    // Взаимодействие с объектами
+    // Interaction detection
     let activeKioskId: string | null = null;
     let activeFoodCartEntity: any = null;
     let activeClothingShopEntity: any = null;
@@ -710,11 +767,11 @@ export class WorldScene extends Phaser.Scene {
 
     if (this.mapJson && this.mapJson.entities) {
       for (const entity of Object.values(this.mapJson.entities)) {
-        const kx = entity.cellX * TILE_SIZE + TILE_SIZE / 2;
-        const ky = entity.cellY * TILE_SIZE + TILE_SIZE / 2;
+        const kx = entity.cellX * TILE_SIZE + TILE_SIZE_HALF;
+        const ky = entity.cellY * TILE_SIZE + TILE_SIZE_HALF;
         const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, kx, ky);
 
-        if (dist < 90) {
+        if (dist < INTERACT_RADIUS) {
           if (entity.type === 'kiosk') {
             activeKioskId = entity.id;
           } else if (entity.type === 'food-cart') {
@@ -733,9 +790,9 @@ export class WorldScene extends Phaser.Scene {
     this.nearFoodCartEntity = activeFoodCartEntity;
     this.nearClothingShopEntity = activeClothingShopEntity;
 
-    // Подсветка кнопки [E] прямо над активным объектом
+    // Show/hide interaction prompt
     if (this.nearKioskId || this.nearFoodCartEntity || this.nearClothingShopEntity) {
-      this.usePrompt.setPosition(targetX, targetY - 60);
+      this.usePrompt.setPosition(targetX, targetY - PROMPT_OFFSET_Y);
       this.usePrompt.setVisible(true);
 
       if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
@@ -770,7 +827,9 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  // ───── HTML Overlay Managers ─────
+  // ============================================================
+  //  SECTION: HTML UI OVERLAYS
+  // ============================================================
 
   private createHTMLHUD(): void {
     this.removeHTMLHUD();
@@ -1068,7 +1127,7 @@ export class WorldScene extends Phaser.Scene {
       
       <div style="display:flex; justify-content:space-between; align-items:center; font-size:14px; color:#ccc;">
         <span id="inv-guide-text">Сдача бутылок кликом в автомате</span>
-        <span id="inv-weight-status">Вес: 0.0 / 2.5 кг</span>
+        <span id="inv-weight-status">Вес: 0.0 / ${BACKPACK_TIERS[1].maxWeight} кг</span>
       </div>
     `;
 
@@ -1095,8 +1154,8 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
-    // Ищем свободное место в инвентаре (с учётом блокировки слотов!)
-    const activeSlotsCount = this.backpackTier === 1 ? 4 : this.backpackTier === 2 ? 8 : 12;
+    // Find a free slot respecting the current backpack tier
+    const activeSlotsCount = this.getActiveSlotsCount();
     let freeSlotIdx = -1;
     for (let i = 0; i < activeSlotsCount; i++) {
       if (this.localInventory[i] === null) {
@@ -1191,8 +1250,8 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
-    // Проверяем вес (снятие сумки сбрасывает вес до лимита 2.5кг)
-    if (this.currentWeight > 2.5) {
+    // Check whether inventory fits into the base pocket limit after unequipping
+    if (this.currentWeight > BACKPACK_TIERS[1].maxWeight) {
       this.showFloatingText('Разгрузи рюкзак до 2.5кг, чтобы снять сумку!', this.player.x, this.player.y - 30, '#ff3333');
       return;
     }
@@ -1234,8 +1293,9 @@ export class WorldScene extends Phaser.Scene {
   private updateHUDUI(): void {
     if (!this.hudOverlayEl) return;
 
-    const maxLimit = this.backpackTier === 1 ? 2.5 : this.backpackTier === 2 ? 15.0 : 30.0;
-    const bagName = this.backpackTier === 1 ? 'Карманы' : this.backpackTier === 2 ? 'Сумка Adidas' : 'Рюкзак';
+    const tierInfo = BACKPACK_TIERS[this.backpackTier] ?? BACKPACK_TIERS[1];
+    const maxLimit = tierInfo.maxWeight;
+    const bagName = tierInfo.name;
 
     const moneyVal = this.hudOverlayEl.querySelector('#hud-money-val');
     if (moneyVal) moneyVal.textContent = this.localMoney.toFixed(2);
@@ -1292,8 +1352,8 @@ export class WorldScene extends Phaser.Scene {
       equipDesc.innerHTML = `<strong style="color:#ff3333;">Без сумки</strong><br/><span style="color:#aaa; font-size:11px;">Доступно только 4 кармана слота</span>`;
     }
 
-    // Рендерим 12 слотов
-    const activeSlotsCount = this.backpackTier === 1 ? 4 : this.backpackTier === 2 ? 8 : 12;
+    // Render inventory slots
+    const activeSlotsCount = this.getActiveSlotsCount();
 
     for (let i = 0; i < INVENTORY_SLOTS; i++) {
       const item = this.localInventory[i];
@@ -1372,7 +1432,7 @@ export class WorldScene extends Phaser.Scene {
       grid.appendChild(slot);
     }
 
-    const maxLimit = this.backpackTier === 1 ? 2.5 : this.backpackTier === 2 ? 15.0 : 30.0;
+    const maxLimit = (BACKPACK_TIERS[this.backpackTier] ?? BACKPACK_TIERS[1]).maxWeight;
     const weightStatus = this.dashboardPanelEl.querySelector('#inv-weight-status');
     if (weightStatus) {
       weightStatus.textContent = `Вес: ${this.currentWeight.toFixed(1)} / ${maxLimit} кг`;
@@ -1420,9 +1480,8 @@ export class WorldScene extends Phaser.Scene {
     const def = BOTTLE_TYPES[b.type];
     if (!def) return;
 
-    // Спрайты бутылок уменьшены на 50% (scale 0.42!)
     const img = this.add.image(b.x, b.y, def.spriteKey);
-    img.setScale(0.42);
+    img.setScale(PLAYER_SCALE);
     img.setDepth(100);
 
     this.tweens.add({
@@ -1474,11 +1533,18 @@ export class WorldScene extends Phaser.Scene {
     });
   }
 
+  // ============================================================
+  //  SECTION: HELPERS
+  // ============================================================
+  private getActiveSlotsCount(): number {
+    return this.backpackTier === 1 ? 4 : this.backpackTier === 2 ? 8 : 12;
+  }
+
   private ensureRemote(id: string, x: number, y: number): void {
     let rect = this.remotePlayers.get(id);
     if (!rect) {
       rect = this.add.sprite(x, y, 'player-sprites', 0);
-      rect.setScale(0.42); // Уменьшено на 50%!
+      rect.setScale(PLAYER_SCALE);
       rect.setTint(REMOTE_TINT);
       rect.setDepth(500);
       this.remotePlayers.set(id, rect);

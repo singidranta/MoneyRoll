@@ -4,10 +4,18 @@
  */
 
 export const MAP_VERSION = 1;
-export const MAP_WIDTH = 10; // Карта мира 10х10 клеток
-export const MAP_HEIGHT = 10;
-export const TILE_SIZE = 128; // Тайлы 128х128 пикселей
+// ============================================================
+//  SECTION: MAP DIMENSIONS
+// ============================================================
+export const MAP_WIDTH = 20; // Карта мира 20x20 клеток
+export const MAP_HEIGHT = 20;
+export const TILE_SIZE = 128; // Тайлы 128x128 пикселей
 
+export const TILE_SIZE_HALF = TILE_SIZE / 2;
+
+// ============================================================
+//  SECTION: TILE TYPES
+// ============================================================
 export const TILE_TYPES = [
   'ground-grass',
   'ground-sand',
@@ -20,6 +28,9 @@ export const TILE_TYPES = [
 
 export type TileType = (typeof TILE_TYPES)[number];
 
+// ============================================================
+//  SECTION: POSITION & ENTITY TYPES
+// ============================================================
 export type CellPos = { x: number; y: number };
 
 export interface MapEntity {
@@ -37,6 +48,9 @@ export interface MapEntity {
   };
 }
 
+// ============================================================
+//  SECTION: MAP DOCUMENT
+// ============================================================
 /**
  * Хранилище карты: разреженный словарь. Ключ — "x,y".
  * Поддерживает вращение в градусах (0, 90, 180, 270) и объекты entities.
@@ -51,6 +65,9 @@ export type MapDocument = {
   entities?: Record<string, MapEntity>; // Объекты привязанные к клеткам. Ключ - cellKey(x,y)
 };
 
+// ============================================================
+//  SECTION: MAP HELPERS
+// ============================================================
 export function cellKey(x: number, y: number): string {
   return `${x},${y}`;
 }
