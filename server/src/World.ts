@@ -1,13 +1,23 @@
 import type { WebSocket } from 'ws';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   BACKPACK_TIERS,
   BOTTLE_TYPES,
   FOOD_WEIGHTS,
   GEAR_WEIGHTS,
   INVENTORY_SLOTS,
+  SHOP_PRICES,
+  JOB_REWARDS,
+  PROPERTIES,
   type InventoryItem,
   type BottleType,
   type ServerBottle,
+  type ShopItemType,
+  type JobType,
+  type PropertyType,
+  type PlayerSave,
+  type ClothingType,
 } from '../../shared/economy.js';
 import { cellKey, MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, TILE_SIZE_HALF, type MapDocument, type MapEntity } from '../../shared/map.js';
 
@@ -25,8 +35,14 @@ type Client = {
   x: number;
   y: number;
   money: number;
-  inventory: (InventoryItem | null)[]; // 12 слотов инвентаря
-  backpackTier: number; // 1 = Карманы, 2 = Сумка Adidas, 3 = Рюкзак туриста
+  inventory: (InventoryItem | null)[];
+  backpackTier: number;
+  hasJacket: boolean;
+  hasSneakers: boolean;
+  hasCrown: boolean;
+  properties: PropertyType[];
+  lastJobAt: Record<JobType, number>;
+  playerToken: string | null;
 };
 
 export type PeerSnapshot = {
@@ -35,6 +51,29 @@ export type PeerSnapshot = {
   y: number;
 };
 
+const PLAYER_SAVE_PATH = path.resolve(process.cwd(), 'server/data/players.json');
+
+function loadPlayerSaves(): Map<string, PlayerSave> {
+  try {
+    if (!fs.existsSync(PLAYER_SAVE_PATH)) return new Map();
+    const raw = fs.readFileSync(PLAYER_SAVE_PATH, 'utf8');
+    const obj = JSON.parse(raw) as Record<string, PlayerSave>;
+    return new Map(Object.entries(obj));
+  } catch {
+    return new Map();
+  }
+}
+
+function savePlayerSaves(map: Map<string, PlayerSave>) {
+  try {
+    fs.mkdirSync(path.dirname(PLAYER_SAVE_PATH), { recursive: true });
+    const obj = Object.fromEntries(map.entries());
+    fs.writeFileSync(PLAYER_SAVE_PATH, JSON.stringify(obj, null, 2));
+  } catch (e) {
+    console.warn('[MoneyRoll] failed to save players:', e);
+  }
+}
+
 export class World {
   private clients = new Map<string, Client>();
   private bottles = new Map<string, ServerBottle>();
@@ -42,10 +81,15 @@ export class World {
   private map: MapDocument | null = null;
   private spawners: MapEntity[] = [];
   private kiosks: MapEntity[] = [];
+  private jobPoints: { id: string; jobType: JobType; x: number; y: number }[] = [];
+  private propertyPoints: MapEntity[] = [];
   private spawnerIntervals: NodeJS.Timeout[] = [];
+  private passiveIncomeTimer?: NodeJS.Timeout;
+  private playerSaves = loadPlayerSaves();
 
   constructor() {
-    // Вся инициализация спавнов происходит через setMap()!
+    // Пассивный доход раз в 15 секунд
+    this.passiveIncomeTimer = setInterval(() => this.tickPassiveIncome(), 15000);
   }
 
   // ============================================================
@@ -66,6 +110,8 @@ export class World {
     this.bottles.clear();
     this.spawners = [];
     this.kiosks = [];
+    this.jobPoints = [];
+    this.propertyPoints = [];
 
     if (!map.entities) {
       map.entities = {};
@@ -76,11 +122,21 @@ export class World {
         this.spawners.push(entity);
       } else if (entity.type === 'kiosk') {
         this.kiosks.push(entity);
+      } else if (entity.type === 'job-courier' || entity.type === 'job-lemonade' || entity.type === 'job-trash') {
+        const jobType = entity.type.replace('job-', '') as JobType;
+        this.jobPoints.push({
+          id: entity.id,
+          jobType,
+          x: entity.cellX * TILE_SIZE + TILE_SIZE_HALF,
+          y: entity.cellY * TILE_SIZE + TILE_SIZE_HALF,
+        });
+      } else if (entity.type === 'property') {
+        this.propertyPoints.push(entity);
       }
     }
 
     console.log(
-      `[MoneyRoll][World] Карта загружена: объектов-спавнеров: ${this.spawners.length}, киосков: ${this.kiosks.length}`
+      `[MoneyRoll][World] Карта загружена: спавнеров: ${this.spawners.length}, киосков: ${this.kiosks.length}, работ: ${this.jobPoints.length}, недвижимости: ${this.propertyPoints.length}`
     );
 
     for (const spawner of this.spawners) {
@@ -107,9 +163,8 @@ export class World {
   //  SECTION: SPAWNING
   // ============================================================
   private tickSpawner(spawner: MapEntity, maxBottles: number): void {
-    const radius = spawner.properties.spawnRadius ?? 3; // Получаем настраиваемый радиус спавна (в клетках)
+    const radius = spawner.properties.spawnRadius ?? 3;
 
-    // Считаем сколько динамических бутылок сейчас находится рядом со спавнером (в радиусе спавна)
     let nearbyCount = 0;
     for (const b of this.bottles.values()) {
       const cellX = Math.floor(b.x / TILE_SIZE);
@@ -121,16 +176,15 @@ export class World {
 
     if (nearbyCount >= maxBottles) return;
 
-    // Спавним 1 бутылку в свободной соседней клетке (в радиусе спавна)
-    const dx = Math.floor(Math.random() * (radius * 2 + 1)) - radius; // -radius..radius
-    const dy = Math.floor(Math.random() * (radius * 2 + 1)) - radius; // -radius..radius
+    const dx = Math.floor(Math.random() * (radius * 2 + 1)) - radius;
+    const dy = Math.floor(Math.random() * (radius * 2 + 1)) - radius;
     const targetX = spawner.cellX + dx;
     const targetY = spawner.cellY + dy;
 
     if (targetX < 0 || targetX >= MAP_WIDTH || targetY < 0 || targetY >= MAP_HEIGHT) return;
 
     const targetKey = cellKey(targetX, targetY);
-    if (this.map?.entities?.[targetKey]) return; // уже занята другим объектом
+    if (this.map?.entities?.[targetKey]) return;
 
     const id = `bottle_${Math.random().toString(36).slice(2, 10)}`;
     const type = this.selectRandomBottleType();
@@ -156,23 +210,80 @@ export class World {
   }
 
   // ============================================================
+  //  SECTION: PASSIVE INCOME
+  // ============================================================
+  private tickPassiveIncome(): void {
+    for (const c of this.clients.values()) {
+      if (c.properties.length === 0) continue;
+      let incomePerMin = 0;
+      for (const p of c.properties) {
+        incomePerMin += PROPERTIES[p].incomePerMin;
+      }
+      // Тик раз в 15 сек = 0.25 мин
+      const gain = incomePerMin * 0.25;
+      if (gain <= 0) continue;
+      c.money = parseFloat((c.money + gain).toFixed(2));
+      c.ws.send(JSON.stringify({
+        type: 'passive-income',
+        amount: gain,
+        money: c.money,
+        message: `Пассивный доход: +$${gain.toFixed(2)}`
+      }));
+      this.saveClient(c);
+    }
+  }
+
+  // ============================================================
+  //  SECTION: PLAYER SAVE
+  // ============================================================
+  private getPlayerSave(token: string): PlayerSave | null {
+    return this.playerSaves.get(token) ?? null;
+  }
+
+  private saveClient(c: Client) {
+    if (!c.playerToken) return;
+    const save: PlayerSave = {
+      money: c.money,
+      inventory: c.inventory,
+      backpackTier: c.backpackTier,
+      hasJacket: c.hasJacket,
+      hasSneakers: c.hasSneakers,
+      hasCrown: c.hasCrown,
+      properties: c.properties,
+    };
+    this.playerSaves.set(c.playerToken, save);
+    savePlayerSaves(this.playerSaves);
+  }
+
+  // ============================================================
   //  SECTION: CLIENT MANAGEMENT
   // ============================================================
-  add(id: string, ws: WebSocket): void {
+  add(id: string, ws: WebSocket, playerToken: string | null = null): void {
     const emptyInventory = Array(INVENTORY_SLOTS).fill(null);
+    let save = playerToken ? this.getPlayerSave(playerToken) : null;
 
-    this.clients.set(id, {
+    const client: Client = {
       id,
       ws,
       x: 400,
       y: 300,
-      money: 5.0, // Стартуем бомжом с $5
-      inventory: emptyInventory,
-      backpackTier: 1 // По умолчанию пакет
-    });
+      money: save?.money ?? 5.0,
+      inventory: save?.inventory ? [...save.inventory, ...Array(Math.max(0, INVENTORY_SLOTS - save.inventory.length)).fill(null)].slice(0, INVENTORY_SLOTS) : emptyInventory,
+      backpackTier: save?.backpackTier ?? 1,
+      hasJacket: save?.hasJacket ?? false,
+      hasSneakers: save?.hasSneakers ?? false,
+      hasCrown: save?.hasCrown ?? false,
+      properties: save?.properties ?? [],
+      lastJobAt: { courier: 0, lemonade: 0, 'trash-sort': 0 },
+      playerToken,
+    };
+
+    this.clients.set(id, client);
   }
 
   remove(id: string): void {
+    const c = this.clients.get(id);
+    if (c) this.saveClient(c);
     this.clients.delete(id);
   }
 
@@ -206,7 +317,7 @@ export class World {
       } else if (item === 'shawarma' || item === 'energy') {
         total += FOOD_WEIGHTS[item];
       } else {
-        total += BOTTLE_TYPES[item].weight;
+        total += BOTTLE_TYPES[item as BottleType].weight;
       }
     }
     return parseFloat(total.toFixed(2));
@@ -214,6 +325,20 @@ export class World {
 
   private getMaxWeightLimit(tier: number): number {
     return BACKPACK_TIERS[tier]?.maxWeight ?? BACKPACK_TIERS[1].maxWeight;
+  }
+
+  private sendFullState(c: Client) {
+    c.ws.send(JSON.stringify({
+      type: 'state-sync',
+      money: c.money,
+      inventory: c.inventory,
+      backpackTier: c.backpackTier,
+      hasJacket: c.hasJacket,
+      hasSneakers: c.hasSneakers,
+      hasCrown: c.hasCrown,
+      properties: c.properties,
+      weight: this.calculateWeight(c.inventory),
+    }));
   }
 
   // ============================================================
@@ -224,6 +349,38 @@ export class World {
     if (!c) return;
 
     switch (msg.type) {
+      case 'auth': {
+        const token = typeof msg.token === 'string' ? msg.token : null;
+        if (token && token !== c.playerToken) {
+          const save = this.getPlayerSave(token);
+          if (save) {
+            c.money = save.money;
+            c.inventory = [...save.inventory, ...Array(Math.max(0, INVENTORY_SLOTS - save.inventory.length)).fill(null)].slice(0, INVENTORY_SLOTS);
+            c.backpackTier = save.backpackTier;
+            c.hasJacket = save.hasJacket;
+            c.hasSneakers = save.hasSneakers;
+            c.hasCrown = save.hasCrown;
+            c.properties = save.properties ?? [];
+          }
+          c.playerToken = token;
+          this.saveClient(c);
+        }
+        c.ws.send(JSON.stringify({
+          type: 'welcome',
+          id: fromId,
+          money: c.money,
+          inventory: c.inventory,
+          backpackTier: c.backpackTier,
+          hasJacket: c.hasJacket,
+          hasSneakers: c.hasSneakers,
+          hasCrown: c.hasCrown,
+          properties: c.properties,
+          players: this.snapshot(fromId),
+          bottles: this.getBottles(),
+        }));
+        break;
+      }
+
       case 'move': {
         if (typeof msg.x === 'number') c.x = msg.x;
         if (typeof msg.y === 'number') c.y = msg.y;
@@ -286,6 +443,7 @@ export class World {
         c.inventory[emptySlotIdx] = bottle.type;
 
         const newWeight = this.calculateWeight(c.inventory);
+        this.saveClient(c);
 
         c.ws.send(JSON.stringify({
           type: 'pickup-success',
@@ -336,18 +494,19 @@ export class World {
           return;
         }
 
-        const price = BOTTLE_TYPES[bottleType].price;
+        const price = BOTTLE_TYPES[bottleType as BottleType].price;
         c.money += price;
         c.inventory[slotIdx] = null;
 
         const newWeight = this.calculateWeight(c.inventory);
+        this.saveClient(c);
 
         c.ws.send(JSON.stringify({
           type: 'sell-success',
           money: c.money,
           inventory: c.inventory,
           weight: newWeight,
-          message: `Сдано: ${BOTTLE_TYPES[bottleType].name}. Получено: $${price.toFixed(2)}`
+          message: `Сдано: ${BOTTLE_TYPES[bottleType as BottleType].name}. Получено: $${price.toFixed(2)}`
         }));
         break;
       }
@@ -377,7 +536,7 @@ export class World {
         for (let i = 0; i < INVENTORY_SLOTS; i++) {
           const type = c.inventory[i];
           if (type && type !== 'bag-adidas' && type !== 'backpack-tourist' && type !== 'shawarma' && type !== 'energy') {
-            totalGain += BOTTLE_TYPES[type].price;
+            totalGain += BOTTLE_TYPES[type as BottleType].price;
             c.inventory[i] = null;
             soldCount++;
           }
@@ -393,6 +552,7 @@ export class World {
 
         c.money += totalGain;
         const newWeight = this.calculateWeight(c.inventory);
+        this.saveClient(c);
 
         c.ws.send(JSON.stringify({
           type: 'sell-success',
@@ -404,64 +564,212 @@ export class World {
         break;
       }
 
+      // === SHOP BUY (server-authoritative) ===
+      case 'buy-shop-item': {
+        const itemType = msg.itemType as ShopItemType;
+        const cost = SHOP_PRICES[itemType];
+        if (!cost) {
+          c.ws.send(JSON.stringify({ type: 'shop-failed', message: 'Товар не продаётся' }));
+          return;
+        }
+        if (c.money < cost) {
+          c.ws.send(JSON.stringify({ type: 'shop-failed', message: 'Недостаточно денег!' }));
+          return;
+        }
+
+        // Одежда
+        if (itemType === 'jacket' || itemType === 'sneakers' || itemType === 'crown') {
+          if (itemType === 'jacket' && c.hasJacket) { c.ws.send(JSON.stringify({ type: 'shop-failed', message: 'Уже куплено' })); return; }
+          if (itemType === 'sneakers' && c.hasSneakers) { c.ws.send(JSON.stringify({ type: 'shop-failed', message: 'Уже куплено' })); return; }
+          if (itemType === 'crown' && c.hasCrown) { c.ws.send(JSON.stringify({ type: 'shop-failed', message: 'Уже куплено' })); return; }
+          c.money -= cost;
+          if (itemType === 'jacket') c.hasJacket = true;
+          if (itemType === 'sneakers') c.hasSneakers = true;
+          if (itemType === 'crown') c.hasCrown = true;
+          this.saveClient(c);
+          c.ws.send(JSON.stringify({
+            type: 'shop-success',
+            itemType,
+            money: c.money,
+            hasJacket: c.hasJacket,
+            hasSneakers: c.hasSneakers,
+            hasCrown: c.hasCrown,
+            message: 'Покупка успешна!'
+          }));
+          return;
+        }
+
+        // Предметы в инвентарь
+        const activeSlots = c.backpackTier === 1 ? 4 : c.backpackTier === 2 ? 8 : 12;
+        let freeSlot = -1;
+        for (let i = 0; i < activeSlots; i++) if (c.inventory[i] === null) { freeSlot = i; break; }
+        if (freeSlot === -1) {
+          c.ws.send(JSON.stringify({ type: 'shop-failed', message: 'Инвентарь полон!' }));
+          return;
+        }
+        c.money -= cost;
+        c.inventory[freeSlot] = itemType as InventoryItem;
+        const weight = this.calculateWeight(c.inventory);
+        this.saveClient(c);
+        c.ws.send(JSON.stringify({
+          type: 'shop-success',
+          itemType,
+          money: c.money,
+          inventory: c.inventory,
+          weight,
+          message: 'Куплено!'
+        }));
+        break;
+      }
+
+      case 'use-item': {
+        const slotIdx = msg.slotIndex as number;
+        if (typeof slotIdx !== 'number' || slotIdx < 0 || slotIdx >= INVENTORY_SLOTS) return;
+        const item = c.inventory[slotIdx];
+        if (item !== 'shawarma' && item !== 'energy') return;
+        c.inventory[slotIdx] = null;
+        this.saveClient(c);
+        c.ws.send(JSON.stringify({
+          type: 'use-item-success',
+          itemType: item,
+          inventory: c.inventory,
+          weight: this.calculateWeight(c.inventory),
+        }));
+        break;
+      }
+
+      case 'equip-bag': {
+        const slotIdx = msg.slotIndex as number;
+        if (typeof slotIdx !== 'number') return;
+        const item = c.inventory[slotIdx];
+        if (item !== 'bag-adidas' && item !== 'backpack-tourist') return;
+        const tier = item === 'bag-adidas' ? 2 : 3;
+        if (c.backpackTier >= tier) {
+          c.ws.send(JSON.stringify({ type: 'equip-failed', message: 'Уже есть лучше' }));
+          return;
+        }
+        c.inventory[slotIdx] = null;
+        c.backpackTier = tier;
+        this.saveClient(c);
+        c.ws.send(JSON.stringify({
+          type: 'equip-success',
+          backpackTier: tier,
+          inventory: c.inventory,
+          weight: this.calculateWeight(c.inventory),
+          message: 'Сумка экипирована'
+        }));
+        break;
+      }
+
+      case 'unequip-bag': {
+        if (c.backpackTier === 1) return;
+        // Проверяем вес
+        const weight = this.calculateWeight(c.inventory);
+        if (weight > BACKPACK_TIERS[1].maxWeight) {
+          c.ws.send(JSON.stringify({ type: 'equip-failed', message: 'Разгрузи рюкзак до 2.5кг!' }));
+          return;
+        }
+        // ищем свободный слот среди первых 4
+        let freeSlot = -1;
+        for (let i = 0; i < 4; i++) if (c.inventory[i] === null) { freeSlot = i; break; }
+        if (freeSlot === -1) {
+          c.ws.send(JSON.stringify({ type: 'equip-failed', message: 'Освободи карманы!' }));
+          return;
+        }
+        const bagItem: InventoryItem = c.backpackTier === 2 ? 'bag-adidas' : 'backpack-tourist';
+        c.inventory[freeSlot] = bagItem;
+        c.backpackTier = 1;
+        this.saveClient(c);
+        c.ws.send(JSON.stringify({
+          type: 'equip-success',
+          backpackTier: 1,
+          inventory: c.inventory,
+          weight: this.calculateWeight(c.inventory),
+          message: 'Сумка снята'
+        }));
+        break;
+      }
+
+      // === JOBS ===
+      case 'job-complete': {
+        const jobType = msg.jobType as JobType;
+        const job = JOB_REWARDS[jobType];
+        if (!job) return;
+        const now = Date.now();
+        if (now - (c.lastJobAt[jobType] ?? 0) < job.cooldownMs) {
+          c.ws.send(JSON.stringify({ type: 'job-failed', message: 'Подожди немного!' }));
+          return;
+        }
+        // Проверяем близость к точке работы
+        let near = false;
+        for (const jp of this.jobPoints) {
+          if (jp.jobType !== jobType) continue;
+          if (Math.hypot(c.x - jp.x, c.y - jp.y) < 180) { near = true; break; }
+        }
+        if (!near) {
+          c.ws.send(JSON.stringify({ type: 'job-failed', message: 'Подойди к месту работы!' }));
+          return;
+        }
+        c.lastJobAt[jobType] = now;
+        const reward = job.min + Math.random() * (job.max - job.min);
+        c.money = parseFloat((c.money + reward).toFixed(2));
+        this.saveClient(c);
+        c.ws.send(JSON.stringify({
+          type: 'job-success',
+          jobType,
+          reward,
+          money: c.money,
+          message: `Заработано: $${reward.toFixed(2)}`
+        }));
+        break;
+      }
+
+      // === PROPERTY BUY ===
+      case 'buy-property': {
+        const propertyType = msg.propertyType as PropertyType;
+        const def = PROPERTIES[propertyType];
+        if (!def) return;
+        if (c.money < def.price) {
+          c.ws.send(JSON.stringify({ type: 'property-failed', message: 'Недостаточно денег!' }));
+          return;
+        }
+        if (c.properties.includes(propertyType)) {
+          c.ws.send(JSON.stringify({ type: 'property-failed', message: 'Уже куплено!' }));
+          return;
+        }
+        c.money -= def.price;
+        c.properties.push(propertyType);
+        this.saveClient(c);
+        c.ws.send(JSON.stringify({
+          type: 'property-success',
+          propertyType,
+          money: c.money,
+          properties: c.properties,
+          message: `Куплено: ${def.name}! Пассивный доход +$${def.incomePerMin}/мин`
+        }));
+        break;
+      }
+
+      // Legacy upgrade-backpack (old client)
       case 'upgrade-backpack': {
         const tier = msg.tier;
         if (typeof tier !== 'number' || tier < 1 || tier > 3) return;
-
-        const cost = tier === 2 ? 15.0 : tier === 3 ? 45.0 : 0;
-        if (c.money < cost) {
-          c.ws.send(JSON.stringify({
-            type: 'upgrade-failed',
-            message: `Недостаточно денег! Нужно $${cost.toFixed(2)}`
-          }));
-          return;
-        }
-
-        if (c.backpackTier >= tier) {
-          c.ws.send(JSON.stringify({
-            type: 'upgrade-failed',
-            message: `У тебя уже есть рюкзак лучше!`
-          }));
-          return;
-        }
-
-        c.money -= cost;
         c.backpackTier = tier;
-
-        const weight = this.calculateWeight(c.inventory);
-
+        this.saveClient(c);
         c.ws.send(JSON.stringify({
           type: 'upgrade-success',
           backpackTier: c.backpackTier,
           money: c.money,
-          weight: weight,
-          message: `Куплено улучшение: ${tier === 2 ? 'Спортивная сумка (15кг)' : 'Рюкзак туриста (30кг)'}!`
+          weight: this.calculateWeight(c.inventory),
+          message: `Тир рюкзака: ${tier}`
         }));
         break;
       }
 
       case 'buy-food': {
-        const item = msg.itemType;
-        const cost = item === 'shawarma' ? 1.50 : item === 'energy' ? 3.00 : 0.0;
-
-        if (c.money < cost) {
-          c.ws.send(JSON.stringify({
-            type: 'buy-food-failed',
-            message: 'Недостаточно денег!'
-          }));
-          return;
-        }
-
-        c.money -= cost;
-
-        c.ws.send(JSON.stringify({
-          type: 'buy-food-success',
-          itemType: item,
-          money: c.money,
-          message: item === 'shawarma' 
-            ? 'Сытная Шаурма! Восстановлено 100% энергии + бафф бега!' 
-            : 'Энергетик Ягуар! Даёт бешеную суперскорость!'
-        }));
+        // legacy – перенаправляем в shop-buy
+        const item = msg.itemType as ShopItemType;
+        this.handle(fromId, { type: 'buy-shop-item', itemType: item });
         break;
       }
 
@@ -478,7 +786,6 @@ export class World {
           return;
         }
 
-        // Check distance
         const dist = Math.hypot(c.x - target.x, c.y - target.y);
         if (dist > 180) {
           c.ws.send(JSON.stringify({
@@ -489,10 +796,8 @@ export class World {
         }
 
         if (action === 'steal') {
-          // 20% chance to steal
           const success = Math.random() < 0.20;
           if (success) {
-            // Find a stealable item from target
             const stealableSlots: number[] = [];
             for (let i = 0; i < INVENTORY_SLOTS; i++) {
               const item = target.inventory[i];
@@ -507,7 +812,6 @@ export class World {
                 success: false,
                 message: 'У игрока нет ничего ценного для кражи!'
               }));
-              // Notify target anyway
               target.ws.send(JSON.stringify({
                 type: 'player-notice',
                 message: `${c.id} пытался тебя обокрасть, но не нашел ничего!`
@@ -518,7 +822,6 @@ export class World {
             const stealIdx = stealableSlots[Math.floor(Math.random() * stealableSlots.length)];
             const stolenItem = target.inventory[stealIdx];
 
-            // Find free slot for thief
             const freeSlot = c.inventory.indexOf(null);
             if (freeSlot === -1) {
               c.ws.send(JSON.stringify({
@@ -529,11 +832,12 @@ export class World {
               return;
             }
 
-            // Transfer item
             target.inventory[stealIdx] = null;
             c.inventory[freeSlot] = stolenItem;
 
             const itemName = this.getItemName(stolenItem!);
+            this.saveClient(c);
+            this.saveClient(target);
 
             c.ws.send(JSON.stringify({
               type: 'steal-result',
@@ -549,7 +853,6 @@ export class World {
               message: `Тебя обокрали! Украли: ${itemName}`
             }));
           } else {
-            // Failed steal - notify both
             c.ws.send(JSON.stringify({
               type: 'steal-result',
               success: false,
@@ -573,6 +876,8 @@ export class World {
 
           c.money -= amount;
           target.money += amount;
+          this.saveClient(c);
+          this.saveClient(target);
 
           c.ws.send(JSON.stringify({
             type: 'give-money-result',
@@ -586,7 +891,7 @@ export class World {
             amount,
             fromId: c.id,
             money: target.money,
-            message: `Тебано переведено: $${amount.toFixed(2)}!`
+            message: `Тебе переведено: $${amount.toFixed(2)}!`
           }));
         } else if (action === 'trade-offer') {
           const slotIdx = msg.slotIndex as number;
@@ -600,7 +905,6 @@ export class World {
             return;
           }
 
-          // Send trade offer to target
           target.ws.send(JSON.stringify({
             type: 'trade-offer',
             fromId: c.id,
@@ -622,7 +926,6 @@ export class World {
         const fromClient = this.clients.get(fromId);
         if (!fromClient) return;
 
-        // Transfer item from sender to accepter
         const slotIdx = msg.slotIndex as number;
         const item = fromClient.inventory[slotIdx];
         if (!item) return;
@@ -638,6 +941,8 @@ export class World {
 
         fromClient.inventory[slotIdx] = null;
         c.inventory[freeSlot] = item;
+        this.saveClient(c);
+        this.saveClient(fromClient);
 
         c.ws.send(JSON.stringify({
           type: 'trade-complete',
@@ -707,5 +1012,6 @@ export class World {
     for (const timer of this.spawnerIntervals) {
       clearInterval(timer);
     }
+    if (this.passiveIncomeTimer) clearInterval(this.passiveIncomeTimer);
   }
 }

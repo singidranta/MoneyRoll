@@ -5,9 +5,13 @@ import {
   BACKPACK_TIERS,
   BOTTLE_TYPES,
   INVENTORY_SLOTS,
+  PROPERTIES,
   type InventoryItem,
   type BottleType,
   type ServerBottle,
+  type JobType,
+  type PropertyType,
+  type ShopItemType,
 } from '../../../shared/economy';
 import { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, TILE_SIZE_HALF, type MapDocument } from '../../../shared/map';
 import { SoundEffects } from '../systems/SoundEffects';
@@ -63,10 +67,12 @@ export class WorldScene extends Phaser.Scene {
   private localInventory: (InventoryItem | null)[] = Array(INVENTORY_SLOTS).fill(null);
   private currentWeight = 0.0;
   private backpackTier = 1;
-  private equippedBag: 'bag-adidas' | 'backpack-tourist' | null = null;
   private hasJacket = false;
   private hasSneakers = false;
   private hasCrown = false;
+  private properties: PropertyType[] = [];
+  // deprecated, для совместимости UI
+  private equippedBag: 'bag-adidas' | 'backpack-tourist' | null = null;
   private stamina = 100.0;
   private isExhausted = false;
   private energyDrinkBuffTimer = 0.0;
@@ -76,9 +82,11 @@ export class WorldScene extends Phaser.Scene {
   // ============================================================
   //  SECTION: SAVE SYSTEM
   // ============================================================
-  private readonly SAVE_KEY = 'moneyroll_save';
+  private readonly SAVE_KEY = 'moneyroll_save_v2';
+  private readonly PLAYER_TOKEN_KEY = 'moneyroll_player_token';
+  private playerToken: string = '';
   private saveAutosaveTimer = 0;
-  private readonly AUTOSAVE_INTERVAL_MS = 30000; // Автосохранение каждые 30 секунд
+  private readonly AUTOSAVE_INTERVAL_MS = 30000; // Автосохранение позиции
 
   // ============================================================
   //  SECTION: DRAG & DROP
@@ -1002,52 +1010,46 @@ export class WorldScene extends Phaser.Scene {
   // ============================================================
   //  SECTION: SAVE SYSTEM
   // ============================================================
+  private getOrCreatePlayerToken(): string {
+    try {
+      let token = localStorage.getItem(this.PLAYER_TOKEN_KEY);
+      if (!token) {
+        token = 'mr_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        localStorage.setItem(this.PLAYER_TOKEN_KEY, token);
+      }
+      return token;
+    } catch {
+      return 'mr_guest_' + Math.random().toString(36).slice(2);
+    }
+  }
+
+  // Сохраняем ТОЛЬКО позицию. Деньги/инвентарь — на сервере, иначе читы.
   private saveGame(): void {
+    if (!this.player) return;
     const saveData = {
-      version: 1,
-      money: this.localMoney,
-      inventory: this.localInventory,
-      backpackTier: this.backpackTier,
-      equippedBag: this.equippedBag,
-      hasJacket: this.hasJacket,
-      hasSneakers: this.hasSneakers,
-      hasCrown: this.hasCrown,
+      version: 2,
       x: this.player.x,
       y: this.player.y,
       savedAt: Date.now(),
     };
     try {
       localStorage.setItem(this.SAVE_KEY, JSON.stringify(saveData));
-      console.log('[MoneyRoll] Игра сохранена');
     } catch (e) {
       console.warn('[MoneyRoll] Ошибка сохранения:', e);
     }
   }
 
   private loadGame(): boolean {
+    this.playerToken = this.getOrCreatePlayerToken();
     try {
       const raw = localStorage.getItem(this.SAVE_KEY);
       if (!raw) return false;
       const data = JSON.parse(raw);
-      if (data.version !== 1) return false;
-
-      this.localMoney = data.money ?? 5.0;
-      this.localInventory = data.inventory ?? Array(INVENTORY_SLOTS).fill(null);
-      this.backpackTier = data.backpackTier ?? 1;
-      this.equippedBag = data.equippedBag ?? null;
-      this.hasJacket = data.hasJacket ?? false;
-      this.hasSneakers = data.hasSneakers ?? false;
-      this.hasCrown = data.hasCrown ?? false;
-
       if (typeof data.x === 'number' && typeof data.y === 'number') {
         this.player.setPosition(data.x, data.y);
+        return true;
       }
-
-      // Apply visual effects
-      if (this.hasCrown) this.player.setTint(0xffd700);
-
-      console.log('[MoneyRoll] Игра загружена, сохранено:', new Date(data.savedAt).toLocaleString());
-      return true;
+      return false;
     } catch (e) {
       console.warn('[MoneyRoll] Ошибка загрузки:', e);
       return false;

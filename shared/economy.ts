@@ -10,6 +10,10 @@ export type InventoryItem =
 
 export type BottleType = 'water' | 'beer-glass' | 'wine' | 'champagne' | 'bordeaux-1982';
 
+export type ClothingType = 'jacket' | 'sneakers' | 'crown';
+
+export type ShopItemType = InventoryItem | ClothingType;
+
 // ============================================================
 //  SECTION: BOTTLE DEFINITIONS
 // ============================================================
@@ -104,6 +108,54 @@ export const BOTTLE_TYPES: Record<BottleType, BottleDef> = {
 };
 
 // ============================================================
+//  SECTION: SHOP PRICES (server-authoritative)
+// ============================================================
+export const SHOP_PRICES: Record<ShopItemType, number> = {
+  shawarma: 1.5,
+  energy: 3.0,
+  'bag-adidas': 15.0,
+  'backpack-tourist': 45.0,
+  jacket: 10.0,
+  sneakers: 20.0,
+  crown: 100.0,
+  // бутылки не продаются в магазине
+  water: 0,
+  'beer-glass': 0,
+  wine: 0,
+  champagne: 0,
+  'bordeaux-1982': 0,
+};
+
+// ============================================================
+//  SECTION: JOBS
+// ============================================================
+export type JobType = 'courier' | 'lemonade' | 'trash-sort';
+
+export const JOB_REWARDS: Record<JobType, { min: number; max: number; cooldownMs: number }> = {
+  courier: { min: 2.5, max: 4.0, cooldownMs: 4000 },
+  lemonade: { min: 1.5, max: 2.5, cooldownMs: 3000 },
+  'trash-sort': { min: 1.0, max: 2.0, cooldownMs: 2500 },
+};
+
+// ============================================================
+//  SECTION: PASSIVE INCOME – PROPERTIES
+// ============================================================
+export type PropertyType = 'shack' | 'apartment-small' | 'apartment-big';
+
+export interface PropertyDef {
+  id: PropertyType;
+  name: string;
+  price: number;
+  incomePerMin: number;
+}
+
+export const PROPERTIES: Record<PropertyType, PropertyDef> = {
+  shack: { id: 'shack', name: 'Сарай с бомжами', price: 120, incomePerMin: 3.0 },
+  'apartment-small': { id: 'apartment-small', name: 'Хрущёвка', price: 450, incomePerMin: 12.0 },
+  'apartment-big': { id: 'apartment-big', name: 'Пентхаус', price: 1500, incomePerMin: 45.0 },
+};
+
+// ============================================================
 //  SECTION: SERVER-SIDE ENTITIES
 // ============================================================
 // Динамические бутылки, находящиеся на карте в данный момент
@@ -112,4 +164,14 @@ export interface ServerBottle {
   type: BottleType;
   x: number;
   y: number;
+}
+
+export interface PlayerSave {
+  money: number;
+  inventory: (InventoryItem | null)[];
+  backpackTier: number;
+  hasJacket: boolean;
+  hasSneakers: boolean;
+  hasCrown: boolean;
+  properties: PropertyType[];
 }
