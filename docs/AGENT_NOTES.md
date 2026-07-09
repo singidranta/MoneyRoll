@@ -74,10 +74,38 @@ obstacle.refreshBody();
 
 ---
 
+## Architecture after refactor (v1.5+)
+
+```
+client/src/
+  config/WorldConstants.ts   # speeds, scales, radii
+  systems/
+    MapRenderer.ts           # tiles + entities + obstacles
+    RemotePlayers.ts         # snapshot interpolation
+    SaveSystem.ts            # localStorage position only
+    MapSystem.ts / Netcode.ts / SoundEffects.ts
+  ui/
+    HudUI.ts / DashboardUI.ts / DragDrop.ts
+    PlayerInteractionUI.ts / FloatingText.ts
+  scenes/WorldScene.ts       # orchestration (~1.1k, was 2.1k)
+
+server/src/
+  World.ts                   # lifecycle, spawn, routing (~0.4k, was 1.0k)
+  PlayerStore.ts             # players.json persistence
+  handlers/
+    economyHandlers.ts       # pickup/sell/shop/bags/jobs
+    interactionHandlers.ts   # steal/trade/give
+  types.ts
+
+shared/
+  economy.ts / map.ts
+  items.ts                   # getItemName, weight, type guards (client+server)
+```
+
 ## Last known state
 
 - Grid is 20×20.
 - Collision bug is fixed.
-- Code is split into block-commented sections.
+- Code is split into block-commented sections + modular files.
 - Server starts with an empty 20×20 map if no `map.json` exists or if the saved map size is wrong.
 - Build and typecheck pass.
