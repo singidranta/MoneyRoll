@@ -5,7 +5,7 @@ import { WorldScene } from '../scenes/WorldScene';
 
 export const GameConfig: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
-  backgroundColor: '#0a0a0a',
+  backgroundColor: '#07090d',
   scale: {
     mode: Phaser.Scale.RESIZE,
     width: 1280,

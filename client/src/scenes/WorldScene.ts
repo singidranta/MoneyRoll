@@ -157,14 +157,15 @@ export class WorldScene extends Phaser.Scene {
 
     // ---------- Interaction prompt ----------
     this.usePrompt = this.add.text(0, 0, '  [ E ]  ', {
-      fontFamily: 'monospace',
-      fontSize: '22px',
+      fontFamily: 'Rubik, monospace',
+      fontSize: '20px',
       fontStyle: 'bold',
-      color: '#ffd700',
-      backgroundColor: '#151515ee',
-      padding: { x: 10, y: 6 }
+      color: '#ffc72c',
+      backgroundColor: '#10141cee',
+      padding: { x: 12, y: 7 }
     });
-    this.usePrompt.setStroke('#ffd700', 3);
+    this.usePrompt.setStroke('#ffc72c', 2);
+    this.usePrompt.setShadow(0, 4, '#000000', 12, true, true);
     this.usePrompt.setOrigin(0.5);
     this.usePrompt.setDepth(1000);
     this.usePrompt.setVisible(false);
@@ -180,7 +181,7 @@ export class WorldScene extends Phaser.Scene {
 
     // ---------- Camera ----------
     this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
-    this.cameras.main.setBackgroundColor('#0a0a0a');
+    this.cameras.main.setBackgroundColor('#07090d');
     this.cameras.main.setBounds(0, 0, MAP_PIXEL_W, MAP_PIXEL_H);
 
     // ---------- World bounds for physics ----------
@@ -844,20 +845,20 @@ export class WorldScene extends Phaser.Scene {
     // 1. Balance panel (top-right)
     const moneyPanel = document.createElement('div');
     moneyPanel.id = 'hud-money-panel';
-    moneyPanel.innerHTML = `🪙 $<span id="hud-money-val">5.00</span>`;
+    moneyPanel.innerHTML = `<img src="/assets/icons/coin.webp" alt="" style="width:30px;height:30px;filter:drop-shadow(0 0 8px rgba(255,199,44,0.6));" /> $<span id="hud-money-val">5.00</span>`;
     hud.appendChild(moneyPanel);
 
     // 2. Weight & stamina panel (bottom-left)
     const statsPanel = document.createElement('div');
     statsPanel.id = 'hud-stats-panel';
     statsPanel.innerHTML = `
-      <div id="hud-weight">🎒 Пакет (0.0 / 8.0 кг)</div>
+      <div id="hud-weight" style="display:flex;align-items:center;gap:6px;">🎒 Пакет (0.0 / 8.0 кг)</div>
       <div class="hud-bar">
-        <div id="hud-weight-bar" class="hud-bar-fill" style="width:0%; background:#7cfc00;"></div>
+        <div id="hud-weight-bar" class="hud-bar-fill" style="width:0%; background:#3ae06f; color:#3ae06f;"></div>
       </div>
-      <div style="font-size:12px; color:#aaa; margin-bottom:4px;">⚡ Энергия (Shift):</div>
-      <div class="hud-bar" style="height:10px; border-radius:5px;">
-        <div id="hud-stamina-bar" class="hud-bar-fill" style="width:100%; background:#ffd700; border-radius:5px;"></div>
+      <div style="font-size:11px; color:#8b93a3; margin-bottom:2px; font-weight:600; letter-spacing:1px; text-transform:uppercase;">⚡ Энергия <span style="opacity:0.6;">(Shift — спринт)</span></div>
+      <div class="hud-bar" style="margin-bottom:2px;">
+        <div id="hud-stamina-bar" class="hud-bar-fill" style="width:100%; background:#ffc72c; color:#ffc72c;"></div>
       </div>
     `;
     hud.appendChild(statsPanel);
@@ -914,7 +915,7 @@ export class WorldScene extends Phaser.Scene {
     panel.className = 'dashboard-panel kiosk';
     panel.innerHTML = `
       <h3>🏪 АВТОМАТ СДАЧИ</h3>
-      <p style="font-size:14px; color:#ccc; line-height:1.5; margin-bottom:16px; text-align:center;">
+      <p style="font-size:13px; color:#8b93a3; line-height:1.55; margin:0 0 16px; text-align:center;">
         Сдавай стеклотару. Кликни по бутылке в инвентаре справа для поштучной сдачи или сдай всё сразу:
       </p>
       <button id="btn-recycle-all" class="dash-btn dash-btn-primary">♻️ СДАТЬ ВСЕ БУТЫЛКИ</button>
@@ -943,7 +944,7 @@ export class WorldScene extends Phaser.Scene {
         <span>⚡ Энергетик "Ягуар"</span>
         <span>$3.00</span>
       </button>
-      <p style="font-size:11px; color:#ccc; line-height:1.4; margin:10px 0; text-align:center;">
+      <p style="font-size:11px; color:#8b93a3; line-height:1.5; margin:10px 0; text-align:center;">
         Купленная еда падает в инвентарь. Кликни на неё, чтобы съесть/выпить.
       </p>
       <button id="btn-close-dashboard" class="dash-btn dash-btn-danger">Закрыть</button>
@@ -1017,15 +1018,15 @@ export class WorldScene extends Phaser.Scene {
     panel.innerHTML = `
       <div class="inventory-header">
         <span class="inventory-title">🎒 МОЙ РЮКЗАК</span>
-        <button id="btn-close-dashboard-x" class="dash-btn-close">[X]</button>
+        <button id="btn-close-dashboard-x" class="dash-btn-close" title="Закрыть (I)">✕</button>
       </div>
       <div class="bag-slot-row">
         <div id="equip-bag-slot" class="bag-slot empty">
           <!-- equipped bag icon goes here -->
         </div>
-        <div style="font-size:12px; line-height:1.4;">
-          <strong style="color:#7cfc00; display:block;">СЛОТ ДЛЯ СУМКИ</strong>
-          <span id="equip-bag-desc" style="color:#aaa;">Без сумки (доступно только 4 кармана)</span>
+        <div style="font-size:12px; line-height:1.45;">
+          <strong style="color:#3ae06f; display:block; letter-spacing:1px; font-size:11px; text-transform:uppercase;">Слот для сумки</strong>
+          <span id="equip-bag-desc" style="color:#8b93a3;">Без сумки (доступно только 4 кармана)</span>
         </div>
       </div>
       <div id="inventory-grid">
@@ -1201,21 +1202,25 @@ export class WorldScene extends Phaser.Scene {
     const weightBar = this.hudOverlayEl.querySelector('#hud-weight-bar') as HTMLDivElement;
     if (weightBar) {
       const pct = Math.min((this.currentWeight / maxLimit) * 100, 100);
+      const color = pct > 85 ? '#ff5252' : pct > 60 ? '#ffc72c' : '#3ae06f';
       weightBar.style.width = `${pct}%`;
-      weightBar.style.background = pct > 85 ? '#ff3333' : pct > 60 ? '#ffd700' : '#7cfc00';
+      weightBar.style.background = color;
+      weightBar.style.color = color; // glow via currentColor
     }
 
     const staminaBar = this.hudOverlayEl.querySelector('#hud-stamina-bar') as HTMLDivElement;
     if (staminaBar) {
       const pct = Math.min(this.stamina, 100);
+      const color = this.energyDrinkBuffTimer > 0
+        ? '#35c8ff'
+        : this.shawarmaBuffTimer > 0
+        ? '#ff9f43'
+        : this.isExhausted
+        ? '#ff5252'
+        : '#ffc72c';
       staminaBar.style.width = `${pct}%`;
-      staminaBar.style.background = this.energyDrinkBuffTimer > 0 
-        ? '#00ccff' 
-        : this.shawarmaBuffTimer > 0 
-        ? '#ff9900' 
-        : this.isExhausted 
-        ? '#ff3333' 
-        : '#ffd700';
+      staminaBar.style.background = color;
+      staminaBar.style.color = color; // glow via currentColor
     }
 
     const playersEl = this.hudOverlayEl.querySelector('#hud-players');
@@ -1239,11 +1244,11 @@ export class WorldScene extends Phaser.Scene {
       const bagPath = `/assets/props/flat/bags/${this.equippedBag}.webp`;
       equipSlot.classList.add('equipped');
       equipSlot.innerHTML = `<img src="${bagPath}" />`;
-      equipDesc.innerHTML = `<strong style="color:#7cfc00;">${this.equippedBag === 'bag-adidas' ? 'Сумка Adidas (15кг)' : 'Рюкзак туриста (30кг)'}</strong><br/><span style="color:#ccc; font-size:11px;">Кликни, чтобы снять в карман</span>`;
+      equipDesc.innerHTML = `<strong style="color:#3ae06f;">${this.equippedBag === 'bag-adidas' ? 'Сумка Adidas (15кг)' : 'Рюкзак туриста (30кг)'}</strong><br/><span style="color:#8b93a3; font-size:11px;">Кликни, чтобы снять в карман</span>`;
     } else {
       equipSlot.classList.add('empty');
-      equipSlot.innerHTML = `<span style="font-size:18px; color:#444;">➕</span>`;
-      equipDesc.innerHTML = `<strong style="color:#ff3333;">Без сумки</strong><br/><span style="color:#aaa; font-size:11px;">Доступно только 4 кармана</span>`;
+      equipSlot.innerHTML = `<span style="font-size:20px; color:#4a5261;">＋</span>`;
+      equipDesc.innerHTML = `<strong style="color:#ff5252;">Без сумки</strong><br/><span style="color:#8b93a3; font-size:11px;">Доступно только 4 кармана</span>`;
     }
 
     // Render inventory slots
@@ -1269,10 +1274,10 @@ export class WorldScene extends Phaser.Scene {
 
         if (item === 'bag-adidas' || item === 'backpack-tourist') {
           webpPath = `/assets/props/flat/bags/${item}.webp`;
-          label = '<span class="inv-slot-label" style="color:#ffd700;">СУМКА</span>';
+          label = '<span class="inv-slot-label" style="color:#ffc72c; border-color:rgba(255,199,44,0.4);">СУМКА</span>';
         } else if (item === 'shawarma' || item === 'energy') {
           webpPath = `/assets/props/flat/food/${item}.webp`;
-          label = '<span class="inv-slot-label" style="color:#ff9900;">ЕДА</span>';
+          label = '<span class="inv-slot-label" style="color:#ff9f43; border-color:rgba(255,159,67,0.4);">ЕДА</span>';
         } else {
           const weight = BOTTLE_TYPES[item as BottleType]?.weight ?? 1.0;
           label = `<span class="inv-slot-label">${weight}кг</span>`;
@@ -1292,7 +1297,7 @@ export class WorldScene extends Phaser.Scene {
           }
         });
       } else {
-        slot.innerHTML = `<span style="font-size:12px; color:#555;">${i + 1}</span>`;
+        slot.innerHTML = `<span style="font-size:11px; color:#3a4150; font-weight:700;">${i + 1}</span>`;
       }
 
       grid.appendChild(slot);
@@ -1377,22 +1382,41 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  private showFloatingText(text: string, x: number, y: number, color = '#7cfc00'): void {
+  private showFloatingText(text: string, x: number, y: number, color = '#3ae06f'): void {
+    // Приводим старые цвета к новой палитре
+    const colorMap: Record<string, string> = {
+      '#7cfc00': '#3ae06f',
+      '#ffd700': '#ffc72c',
+      '#ff3333': '#ff5252',
+      '#ff9900': '#ff9f43',
+    };
+    const themed = colorMap[color] ?? color;
+
     const ftext = this.add.text(x, y, text, {
-      fontFamily: 'monospace',
-      fontSize: '11px',
-      color,
-      backgroundColor: '#000000dd',
-      padding: { x: 5, y: 3 }
+      fontFamily: 'Rubik, monospace',
+      fontSize: '12px',
+      fontStyle: 'bold',
+      color: themed,
+      backgroundColor: '#10141cee',
+      padding: { x: 8, y: 5 }
     });
     ftext.setOrigin(0.5);
     ftext.setDepth(2000);
+    ftext.setScale(0.6);
+    ftext.setShadow(0, 3, '#000000', 8, true, true);
 
     this.tweens.add({
       targets: ftext,
-      y: y - 30,
+      scale: 1,
+      duration: 180,
+      ease: 'Back.easeOut'
+    });
+    this.tweens.add({
+      targets: ftext,
+      y: y - 34,
       alpha: 0,
       duration: 1600,
+      delay: 220,
       onComplete: () => ftext.destroy()
     });
   }
