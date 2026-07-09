@@ -9,16 +9,11 @@ import {
   PROPERTIES,
   DEFAULT_JOB_SKILLS,
   DEFAULT_LICENSES,
-  TRAINING_COURSES,
-  COURIER_RANKS,
-  getCourierRank,
   type BottleType,
   type InventoryItem,
   type JobType,
   type PropertyType,
   type ServerBottle,
-  type JobSkills,
-  type JobLicense,
 } from '../../shared/economy.js';
 import {
   cellKey,
@@ -51,7 +46,7 @@ import {
   type InteractionContext,
 } from './handlers/interactionHandlers.js';
 import { PlayerStore } from './PlayerStore.js';
-import type { Client, JobPoint, PeerSnapshot, PropertyPoint, WireMessage } from './types.js';
+import type { Client, JobPoint, PeerSnapshot, PropertyPoint, SchoolPoint, WireMessage } from './types.js';
 
 export type { WireMessage, PeerSnapshot } from './types.js';
 
@@ -64,6 +59,7 @@ export class World {
   private kiosks: MapEntity[] = [];
   private jobPoints: JobPoint[] = [];
   private propertyPoints: PropertyPoint[] = [];
+  private schoolPoints: SchoolPoint[] = [];
   private spawnerIntervals: NodeJS.Timeout[] = [];
   private passiveIncomeTimer?: NodeJS.Timeout;
   private playerStore = new PlayerStore();
@@ -91,6 +87,7 @@ export class World {
     this.kiosks = [];
     this.jobPoints = [];
     this.propertyPoints = [];
+    this.schoolPoints = [];
 
     if (!map.entities) map.entities = {};
 
@@ -101,16 +98,30 @@ export class World {
         this.spawners.push(entity);
       } else if (entityType === 'kiosk') {
         this.kiosks.push(entity);
+      } else if (entityType === 'school') {
+        this.schoolPoints.push({
+          id: entity.id,
+          x: entity.cellX * TILE_SIZE + TILE_SIZE_HALF,
+          y: entity.cellY * TILE_SIZE + TILE_SIZE_HALF,
+        });
       } else if (
         entityType === 'job-courier' ||
+        entityType === 'courier-hub' ||
         entityType === 'job-lemonade' ||
+        entityType === 'lemonade-stand' ||
         entityType === 'job-trash-sort' ||
+        entityType === 'trash-sort-station' ||
         entityType === 'job-trash'
       ) {
-        // job-trash оставлен для карт, созданных до появления редакторного типа.
-        const jobType: JobType = entityType === 'job-trash' || entityType === 'job-trash-sort'
-          ? 'trash-sort'
-          : entityType.replace('job-', '') as JobType;
+        // Старые job-* и новые здания профессий работают одинаково.
+        const jobType: JobType =
+          entityType === 'job-trash' ||
+          entityType === 'job-trash-sort' ||
+          entityType === 'trash-sort-station'
+            ? 'trash-sort'
+            : entityType === 'job-courier' || entityType === 'courier-hub'
+              ? 'courier'
+              : 'lemonade';
         this.jobPoints.push({
           id: entity.id,
           jobType,
@@ -301,6 +312,7 @@ export class World {
       kiosks: this.kiosks,
       jobPoints: this.jobPoints,
       propertyPoints: this.propertyPoints,
+      schoolPoints: this.schoolPoints,
       saveClient: (c) => this.playerStore.saveClient(c),
       broadcastAll: (p) => this.broadcastAll(p),
     };

@@ -2,8 +2,8 @@
 //  SECTION: JOB MINIGAME UI – v2 real tasks
 // ============================================================
 
-import type { JobType, JobSkill, JobLicense, TrashFractionId } from '../../../shared/economy';
-import { TRASH_FRACTIONS, TRASH_SORT_ITEMS, COURIER_DISTRICTS, LEMONADE_RECIPES, getCourierRank, COURIER_RANKS } from '../../../shared/economy';
+import type { JobType, JobSkill, JobLicense } from '../../../shared/economy';
+import { TRASH_FRACTIONS, TRASH_SORT_ITEMS, COURIER_DISTRICTS } from '../../../shared/economy';
 
 export type JobStartCallback = (score: number, details?: any) => void;
 export type TrainingBuyCallback = (courseId: string) => void;
@@ -57,11 +57,11 @@ export class JobMinigameUI {
 
     const courses = [
       { id:'courier_basic', title:'🚲 Курьер-стажёр', cost:25, desc:'Лицензия курьера. Открывает доставку $8–22/заказ', req:0, owned: licenses.courier },
-      { id:'courier_pro', title:'⚡ Скоростная доставка', cost:65, desc:'+35% оплата, бизнес-район', req:2, owned: completed.includes('courier_pro'), skill: skills.courtier?.level ?? skills.courier.level },
+      { id:'courier_pro', title:'⚡ Скоростная доставка', cost:65, desc:'+35% оплата, бизнес-район', req:2, owned: completed.includes('courier_pro'), skill: skills.courier.level },
       { id:'courier_master', title:'👑 Мастер-логист', cost:140, desc:'+130% оплата, VIP-клиенты', req:5, owned: completed.includes('courier_master'), skill: skills.courier.level },
       { id:'trash_basic', title:'♻ Сортировщик', cost:15, desc:'Сертификат эко-сортировки. $5–14/смена', req:0, owned: licenses.trashSort },
       { id:'trash_expert', title:'☢ Эко-инженер', cost:55, desc:'Опасные отходы +40%', req:3, owned: completed.includes('trash_expert'), skill: skills['trash-sort'].level },
-      { id:'lemonade_business', title:'🍋 Бизнес лимонада', cost:80, desc:'Покупка собственного стенда', req:1, owned: licenses.lemonadeBusiness },
+      { id:'lemonade_business', title:'🍋 Лимонадный мастер', cost:80, desc:'Образование продавца лимонада. Открывает работу у точки', req:0, owned: licenses.lemonadeBusiness },
     ];
 
     const grid = root.querySelector('#school-courses') as HTMLElement;
@@ -343,33 +343,69 @@ export class JobMinigameUI {
     </div>`;
     document.body.appendChild(root); this.root=root;
     let beat=0, hits=0, pos=0, dir=1, running=true;
+    let animationFrame = 0;
+    let lastFrameAt = performance.now();
+    let finishTimer: ReturnType<typeof setTimeout> | undefined;
     const cursor=root.querySelector('#lemon-cursor') as HTMLElement;
     const beatEl=root.querySelector('#lemon-beat') as HTMLElement;
     const hitsEl=root.querySelector('#lemon-hits') as HTMLElement;
-    const loop=()=>{
+
+    // Раньше ползунок двигался на 2.2% каждый кадр — попасть было почти невозможно.
+    // Скорость теперь задаётся в процентах в секунду и в несколько раз ниже.
+    const cursorSpeed = 42;
+    const loop=(now: number)=>{
       if(!running) return;
-      pos+=dir*2.2;
-      if(pos>100||pos<0){ dir*=-1; if(dir>0){ beat++; beatEl.textContent=String(beat); if(beat>=12) return finish(); } }
+      const elapsed = Math.min(80, now - lastFrameAt) / 1000;
+      lastFrameAt = now;
+      pos += dir * cursorSpeed * elapsed;
+      if(pos>=100 || pos<=0){
+        pos = Math.max(0, Math.min(100, pos));
+        dir *= -1;
+        beat++;
+        beatEl.textContent=String(beat);
+        if(beat>=12) return finish();
+      }
       cursor.style.left=pos+'%';
-      requestAnimationFrame(loop);
+      animationFrame = requestAnimationFrame(loop);
     };
     const tap=()=>{
+      if(!running) return;
       const inZone = pos>=42 && pos<=58;
-      if(inZone){ hits++; hitsEl.textContent=String(hits); cursor.style.background='#22c55e'; setTimeout(()=>cursor.style.background='#ffd700',120);}
-      else { cursor.style.background='#ef4444'; setTimeout(()=>cursor.style.background='#ffd700',120);}
+      if(inZone){
+        hits++;
+        hitsEl.textContent=String(hits);
+        cursor.style.background='#22c55e';
+        window.setTimeout(()=>{ if(running) cursor.style.background='#ffd700'; },180);
+      } else {
+        cursor.style.background='#ef4444';
+        window.setTimeout(()=>{ if(running) cursor.style.background='#ffd700'; },180);
+      }
     };
     root.querySelector('#lemon-tap')?.addEventListener('click',tap);
-    const key=(e:KeyboardEvent)=>{ if(e.code==='Space'){ e.preventDefault(); tap(); } if(e.key==='Escape'){ running=false; this.destroy(); onClose(); } };
+    const key=(e:KeyboardEvent)=>{
+      if(e.code==='Space'){ e.preventDefault(); tap(); }
+      if(e.key==='Escape'){
+        running=false;
+        cancelAnimationFrame(animationFrame);
+        document.removeEventListener('keydown',key);
+        if(finishTimer) clearTimeout(finishTimer);
+        this.destroy();
+        onClose();
+      }
+    };
     document.addEventListener('keydown',key);
     const finish=()=>{
+      if(!running) return;
       running=false;
+      cancelAnimationFrame(animationFrame);
       document.removeEventListener('keydown',key);
+      if(finishTimer) clearTimeout(finishTimer);
       const score = Math.round((hits/12)*100);
       this.destroy();
       onFinish(score,{hits});
     };
-    requestAnimationFrame(loop);
-    // auto end after ~20s
-    setTimeout(()=>{ if(running) finish(); },22000);
+    animationFrame = requestAnimationFrame(loop);
+    // Запасной таймер не даёт мини-игре зависнуть во вкладке, потерявшей фокус.
+    finishTimer = setTimeout(()=>{ if(running) finish(); },38000);
   }
 }

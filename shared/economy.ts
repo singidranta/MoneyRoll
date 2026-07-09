@@ -135,8 +135,8 @@ export type JobType = 'courier' | 'lemonade' | 'trash-sort';
 export const JOB_REWARDS: Record<JobType, { min: number; max: number; cooldownMs: number; baseXp: number }> = {
   // Курьер: сортировка + доставка, требует лицензию из школы
   courier: { min: 8.0, max: 22.0, cooldownMs: 8000, baseXp: 15 },
-  // Лимонад: ритм-игра, можно купить стенд как бизнес
-  lemonade: { min: 4.5, max: 9.5, cooldownMs: 5000, baseXp: 8 },
+  // Лимонад: ритм-игра. После попытки следующая смена доступна через 60 секунд.
+  lemonade: { min: 4.5, max: 9.5, cooldownMs: 60_000, baseXp: 8 },
   // Сортировка мусора: реальная сортировка по фракциям
   'trash-sort': { min: 5.0, max: 14.0, cooldownMs: 6000, baseXp: 12 },
 };
@@ -291,11 +291,11 @@ export const TRAINING_COURSES: TrainingCourse[] = [
   },
   {
     id: 'lemonade_business',
-    name: 'Бизнес лимонада',
-    description: 'Открывает покупку собственного стенда',
+    name: 'Лимонадный мастер',
+    description: 'Образование продавца лимонада. Открывает работу у лимонадной точки.',
     cost: 80,
-    requiredLevel: 1,
-    unlocks: ['lemonade_stand_purchase'],
+    requiredLevel: 0,
+    unlocks: ['lemonade_license', 'lemonade_stand_purchase'],
     skillBoost: { lemonade: 1 },
   },
 ];

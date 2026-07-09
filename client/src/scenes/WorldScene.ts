@@ -720,6 +720,7 @@ export class WorldScene extends Phaser.Scene {
     let activeClothingShopEntity: MapEntity | null = null;
     let activeJobEntity: MapEntity | null = null;
     let activePropertyEntity: MapEntity | null = null;
+    let activeSchoolEntity: MapEntity | null = null;
     let nearestEntityDistance = INTERACT_RADIUS;
     let targetX = this.player.x;
     let targetY = this.player.y;
@@ -741,6 +742,7 @@ export class WorldScene extends Phaser.Scene {
         activeClothingShopEntity = entity.type === 'clothing-shop' ? entity : null;
         activeJobEntity = this.jobTypeForEntity(entity) ? entity : null;
         activePropertyEntity = entity.type === 'property' ? entity : null;
+        activeSchoolEntity = entity.type === 'school' ? entity : null;
       }
     }
 
@@ -749,6 +751,7 @@ export class WorldScene extends Phaser.Scene {
     this.nearClothingShopEntity = activeClothingShopEntity;
     this.nearJobEntity = activeJobEntity;
     this.nearPropertyEntity = activePropertyEntity;
+    this.nearSchoolEntity = activeSchoolEntity;
     this.detectNearbyPlayer();
 
     const nearAnyWorldInteraction =
@@ -756,7 +759,8 @@ export class WorldScene extends Phaser.Scene {
       this.nearFoodCartEntity ||
       this.nearClothingShopEntity ||
       this.nearJobEntity ||
-      this.nearPropertyEntity;
+      this.nearPropertyEntity ||
+      this.nearSchoolEntity;
     const nearPlayer = this.nearPlayerId !== null;
 
     if (nearAnyWorldInteraction || nearPlayer) {
@@ -765,7 +769,8 @@ export class WorldScene extends Phaser.Scene {
       this.usePrompt.setVisible(true);
 
       if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
-        if (this.nearJobEntity) this.completeNearbyJob();
+        if (this.nearSchoolEntity) this.openSchool();
+        else if (this.nearJobEntity) this.completeNearbyJob();
         else if (this.nearPropertyEntity) this.buyNearbyProperty();
         else if (nearPlayer && !nearAnyWorldInteraction) this.showPlayerInteractionMenu();
         else this.toggleInventory(true);
@@ -813,15 +818,20 @@ export class WorldScene extends Phaser.Scene {
       entity.type === 'kiosk' ||
       entity.type === 'food-cart' ||
       entity.type === 'clothing-shop' ||
+      entity.type === 'school' ||
       this.jobTypeForEntity(entity) !== null ||
       entity.type === 'property'
     );
   }
 
   private jobTypeForEntity(entity: MapEntity): JobType | null {
-    if (entity.type === 'job-courier') return 'courier';
-    if (entity.type === 'job-lemonade') return 'lemonade';
-    if (entity.type === 'job-trash-sort' || entity.type === 'job-trash') return 'trash-sort';
+    if (entity.type === 'job-courier' || entity.type === 'courier-hub') return 'courier';
+    if (entity.type === 'job-lemonade' || entity.type === 'lemonade-stand') return 'lemonade';
+    if (
+      entity.type === 'job-trash-sort' ||
+      entity.type === 'job-trash' ||
+      entity.type === 'trash-sort-station'
+    ) return 'trash-sort';
     return null;
   }
 
@@ -832,10 +842,24 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private interactionPrompt(): string {
+    if (this.nearSchoolEntity) return '[E] Войти в школу профессий';
+
     const jobType = this.nearJobEntity ? this.jobTypeForEntity(this.nearJobEntity) : null;
-    if (jobType === 'courier') return '[E] Работать курьером';
-    if (jobType === 'lemonade') return '[E] Продавать лимонад';
-    if (jobType === 'trash-sort') return '[E] Сортировать мусор';
+    if (jobType === 'courier') {
+      return this.licenses.courier
+        ? '[E] Работать курьером'
+        : '[E] Нужно образование курьера — иди в школу';
+    }
+    if (jobType === 'lemonade') {
+      return this.licenses.lemonadeBusiness
+        ? '[E] Продавать лимонад'
+        : '[E] Нужно образование продавца — иди в школу';
+    }
+    if (jobType === 'trash-sort') {
+      return this.licenses.trashSort
+        ? '[E] Сортировать мусор'
+        : '[E] Нужно образование сортировщика — иди в школу';
+    }
 
     if (this.nearPropertyEntity) {
       const propertyType = this.propertyTypeForEntity(this.nearPropertyEntity);
@@ -860,13 +884,15 @@ export class WorldScene extends Phaser.Scene {
 
     // Проверка лицензий
     if (jobType === 'courier' && !this.licenses.courier) {
-      this.float('Нужна лицензия! Иди в Школу курьеров 🎓', this.player.x, this.player.y - 30, '#ff9900');
-      this.openSchool();
+      this.float('Нужно образование курьера. Найди здание школы 🎓', this.player.x, this.player.y - 30, '#ff9900');
       return;
     }
     if (jobType === 'trash-sort' && !this.licenses.trashSort) {
-      this.float('Нужен сертификат сортировщика! Школа экологии', this.player.x, this.player.y - 30, '#ff9900');
-      this.openSchool();
+      this.float('Нужно образование сортировщика. Найди здание школы 🎓', this.player.x, this.player.y - 30, '#ff9900');
+      return;
+    }
+    if (jobType === 'lemonade' && !this.licenses.lemonadeBusiness) {
+      this.float('Нужно образование продавца лимонада. Найди здание школы 🎓', this.player.x, this.player.y - 30, '#ff9900');
       return;
     }
 

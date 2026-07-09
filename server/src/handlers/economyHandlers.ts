@@ -28,13 +28,14 @@ import {
   tierToBag,
 } from '../../../shared/items.js';
 import { TILE_SIZE, TILE_SIZE_HALF, type MapEntity } from '../../../shared/map.js';
-import type { Client, JobPoint, PropertyPoint, WireMessage } from '../types.js';
+import type { Client, JobPoint, PropertyPoint, SchoolPoint, WireMessage } from '../types.js';
 
 export type EconomyContext = {
   bottles: Map<string, ServerBottle>;
   kiosks: MapEntity[];
   jobPoints: JobPoint[];
   propertyPoints: PropertyPoint[];
+  schoolPoints: SchoolPoint[];
   saveClient: (c: Client) => void;
   broadcastAll: (payload: object) => void;
 };
@@ -383,11 +384,27 @@ export function handleJobComplete(c: Client, msg: WireMessage, ctx: EconomyConte
     send(c, { type: 'job-failed', message: 'Нужен сертификат сортировщика! Школа экологии ($15)' });
     return;
   }
+  if (jobType === 'lemonade' && !c.licenses.lemonadeBusiness) {
+    send(c, { type: 'job-failed', message: 'Нужно образование продавца лимонада! Иди в школу.' });
+    return;
+  }
 
+  // Одна попытка лимонада запускает полный кулдаун даже при промахе.
   c.lastJobAt[jobType] = now;
 
   // --- Мини-игра: score 0-100 приходит с клиента ---
-  const clientScore = typeof msg.score === 'number' ? Math.max(0, Math.min(100, msg.score)) : 70 + Math.random()*30;
+  // Если клиент не прислал результат, это промах, а не случайная выплата.
+  const clientScore = typeof msg.score === 'number' && Number.isFinite(msg.score)
+    ? Math.max(0, Math.min(100, msg.score))
+    : 0;
+  if (jobType === 'lemonade' && clientScore <= 0) {
+    ctx.saveClient(c);
+    send(c, {
+      type: 'job-failed',
+      message: '🍋 Промах! Лимонад не продан. Следующая попытка через 60 секунд.',
+    });
+    return;
+  }
   const accuracy = clientScore / 100;
 
   // Скилл игрока
@@ -449,6 +466,14 @@ export function handleJobComplete(c: Client, msg: WireMessage, ctx: EconomyConte
 
 // --- НОВОЕ: Школа / Training ---
 export function handleTrainingBuy(c: Client, msg: WireMessage, ctx: EconomyContext): void {
+  const atSchool = ctx.schoolPoints.some(
+    (school) => Math.hypot(c.x - school.x, c.y - school.y) < INTERACT_DIST,
+  );
+  if (!atSchool) {
+    send(c, { type: 'training-failed', message: 'Подойди к зданию школы профессий.' });
+    return;
+  }
+
   const courseId = msg.courseId as string;
   const course = TRAINING_COURSES.find(tc => tc.id === courseId);
   if (!course) {
@@ -465,7 +490,7 @@ export function handleTrainingBuy(c: Client, msg: WireMessage, ctx: EconomyConte
   }
   // Проверка уровня (берём максимальный скилл среди указанных)
   let meetsLevel = true;
-  for (const [jt, boost] of Object.entries(course.skillBoost)) {
+  for (const [jt] of Object.entries(course.skillBoost)) {
     const s = c.jobSkills[jt as JobType];
     if (s && s.level < course.requiredLevel) meetsLevel = false;
   }
@@ -504,7 +529,7 @@ export function handleTrainingBuy(c: Client, msg: WireMessage, ctx: EconomyConte
 }
 
 // job-start: выдаёт задание клиенту
-export function handleJobStart(c: Client, msg: WireMessage, ctx: EconomyContext): void {
+export function handleJobStart(c: Client, msg: WireMessage, _ctx: EconomyContext): void {
   const jobType = msg.jobType as JobType;
   if (!JOB_REWARDS[jobType]) return;
 
@@ -515,6 +540,10 @@ export function handleJobStart(c: Client, msg: WireMessage, ctx: EconomyContext)
   }
   if (jobType === 'trash-sort' && !c.licenses.trashSort) {
     send(c, { type: 'job-failed', message: 'Нужен сертификат сортировщика!' });
+    return;
+  }
+  if (jobType === 'lemonade' && !c.licenses.lemonadeBusiness) {
+    send(c, { type: 'job-failed', message: 'Нужно образование продавца лимонада! Иди в школу.' });
     return;
   }
 

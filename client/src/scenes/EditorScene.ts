@@ -246,15 +246,20 @@ export class EditorScene extends Phaser.Scene {
       case 'wall':
       case 'school':
       case 'courier-hub':
+      case 'job-courier':
       case 'trash-sort-station':
+      case 'job-trash-sort':
+      case 'job-trash':
       case 'lemonade-stand':
+      case 'job-lemonade':
         this.renderImageEntity(
           key,
           entity,
           px,
           py,
-          // @ts-ignore new sprites
-          entity.type,
+          entity.type === 'job-courier' ? 'courier-hub'
+            : entity.type === 'job-trash-sort' || entity.type === 'job-trash' ? 'trash-sort-station'
+              : entity.type === 'job-lemonade' ? 'lemonade-stand' : entity.type,
           entity.type === 'kiosk' ? 1.1 : 0.9,
         );
         break;
@@ -267,32 +272,9 @@ export class EditorScene extends Phaser.Scene {
       case 'building':
         this.renderBuilding(key, entity, px, py);
         break;
-      case 'job-courier':
-      case 'courier-hub':
-        this.renderActionMarker(key, px, py, '🚲', 'РАБОТА: КУРЬЕР PRO', '$8–22', 0x3b82f6);
+      case 'property':
+        this.renderPropertyImage(key, entity, px, py);
         break;
-      case 'job-lemonade':
-      case 'lemonade-stand':
-        this.renderActionMarker(key, px, py, '🍋', 'РАБОТА: ЛИМОНАД', '$4.5–9.5', 0xfacc15);
-        break;
-      case 'job-trash-sort':
-      case 'job-trash':
-      case 'trash-sort-station':
-        this.renderActionMarker(key, px, py, '♻', 'СОРТИРОВКА', '$5–14', 0x22c55e);
-        break;
-      case 'property': {
-        const property = PROPERTIES[entity.properties.propertyType ?? 'shack'];
-        this.renderActionMarker(
-          key,
-          px,
-          py,
-          '⌂',
-          `НЕДВИЖИМОСТЬ: ${property.name.toUpperCase()}`,
-          `$${property.price} · +$${property.incomePerMin}/мин`,
-          0xa855f7,
-        );
-        break;
-      }
     }
   }
 
@@ -383,49 +365,16 @@ export class EditorScene extends Phaser.Scene {
     this.entitySpritesMap.set(key, visualContainer);
   }
 
-  /** Временная, но понятная визуализация игровых точек без отдельного ассета. */
-  private renderActionMarker(
-    key: string,
-    px: number,
-    py: number,
-    icon: string,
-    title: string,
-    subtitle: string,
-    color: number,
-  ): void {
-    const visualContainer = this.add.container(px, py);
-    visualContainer.setDepth(100);
-
-    const body = this.add.rectangle(0, 0, 112, 82, color, 0.9);
-    body.setStrokeStyle(3, 0xffffff, 0.9);
-
-    const iconText = this.add.text(-39, 0, icon, {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '30px',
-    });
-    iconText.setOrigin(0.5);
-
-    const titleText = this.add.text(10, -13, title, {
-      fontFamily: 'monospace',
-      fontSize: '9px',
-      color: '#ffffff',
-      fontStyle: 'bold',
-      align: 'center',
-      wordWrap: { width: 72 },
-    });
-    titleText.setOrigin(0.5);
-
-    const subtitleText = this.add.text(10, 20, subtitle, {
-      fontFamily: 'monospace',
-      fontSize: '9px',
-      color: '#f8fafc',
-      align: 'center',
-      wordWrap: { width: 72 },
-    });
-    subtitleText.setOrigin(0.5);
-
-    visualContainer.add([body, iconText, titleText, subtitleText]);
-    this.entitySpritesMap.set(key, visualContainer);
+  private renderPropertyImage(key: string, entity: MapEntity, px: number, py: number): void {
+    const propertyType = entity.properties.propertyType ?? 'shack';
+    const texture = propertyType === 'shack'
+      ? 'shack'
+      : propertyType === 'apartment-big'
+        ? 'apartment-2'
+        : propertyType === 'lemonade-stand'
+          ? 'lemonade-stand'
+          : 'apartment-1';
+    this.renderImageEntity(key, entity, px, py, texture, 0.9);
   }
 
   private entityLabel(): string | undefined {
@@ -603,14 +552,28 @@ export class EditorScene extends Phaser.Scene {
         spriteKey = 'apartment-2';
       } else if (this.selectedEntityType === 'wall') {
         spriteKey = 'wall';
-      } else if (this.selectedEntityType === 'npc' || this.selectedEntityType === 'job-courier') {
+      } else if (this.selectedEntityType === 'school') {
+        spriteKey = 'school';
+      } else if (this.selectedEntityType === 'npc') {
         spriteKey = 'player-sprites';
-      } else if (this.selectedEntityType === 'job-lemonade') {
-        spriteKey = 'food-cart';
-      } else if (this.selectedEntityType === 'job-trash-sort' || this.selectedEntityType === 'job-trash') {
-        spriteKey = 'recycle-machine';
+      } else if (this.selectedEntityType === 'job-courier' || this.selectedEntityType === 'courier-hub') {
+        spriteKey = 'courier-hub';
+      } else if (
+        this.selectedEntityType === 'job-trash-sort' ||
+        this.selectedEntityType === 'job-trash' ||
+        this.selectedEntityType === 'trash-sort-station'
+      ) {
+        spriteKey = 'trash-sort-station';
+      } else if (this.selectedEntityType === 'job-lemonade' || this.selectedEntityType === 'lemonade-stand') {
+        spriteKey = 'lemonade-stand';
       } else if (this.selectedEntityType === 'property') {
-        spriteKey = this.selectedPropertyType === 'apartment-big' ? 'apartment-2' : 'apartment-1';
+        spriteKey = this.selectedPropertyType === 'shack'
+          ? 'shack'
+          : this.selectedPropertyType === 'apartment-big'
+            ? 'apartment-2'
+            : this.selectedPropertyType === 'lemonade-stand'
+              ? 'lemonade-stand'
+              : 'apartment-1';
       } else {
         spriteKey = 'bottle-water';
       }

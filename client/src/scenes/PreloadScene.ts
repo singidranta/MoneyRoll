@@ -68,6 +68,7 @@ export class PreloadScene extends Phaser.Scene {
     // Здания / объекты
     this.load.image('apartment-1', '/assets/props/flat/buildings/apartment-1.webp');
     this.load.image('apartment-2', '/assets/props/flat/buildings/apartment-2.webp');
+    this.load.image('shack', '/assets/props/flat/buildings/shack.png');
     this.load.image('clothing-shop', '/assets/props/flat/buildings/clothing-shop.webp');
     this.load.image('school', '/assets/props/flat/buildings/school.webp');
     this.load.image('wall', '/assets/props/flat/walls/wall.webp');
