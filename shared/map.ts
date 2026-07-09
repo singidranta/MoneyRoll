@@ -31,11 +31,38 @@ export type TileType = (typeof TILE_TYPES)[number];
 // ============================================================
 //  SECTION: POSITION & ENTITY TYPES
 // ============================================================
+import type { PropertyType } from './economy.js';
+
 export type CellPos = { x: number; y: number };
+
+/** Типы объектов, которые можно сохранить на карте через редактор. */
+export const MAP_ENTITY_TYPES = [
+  'kiosk',
+  'spawner',
+  'npc',
+  'building',
+  'apartment-1',
+  'apartment-2',
+  'wall',
+  'food-cart',
+  'clothing-shop',
+  'job-courier',
+  'job-lemonade',
+  'job-trash-sort',
+  // Поддержка короткого имени из ранней серверной реализации.
+  'job-trash',
+  'property',
+] as const;
+
+export type MapEntityType = (typeof MAP_ENTITY_TYPES)[number];
+
+export function isMapEntityType(value: unknown): value is MapEntityType {
+  return typeof value === 'string' && (MAP_ENTITY_TYPES as readonly string[]).includes(value);
+}
 
 export interface MapEntity {
   id: string; // Уникальный ID объекта
-  type: 'kiosk' | 'spawner' | 'npc' | 'building' | 'apartment-1' | 'apartment-2' | 'wall' | 'food-cart' | 'clothing-shop';
+  type: MapEntityType;
   cellX: number;
   cellY: number;
   rotation: number; // 0, 90, 180, 270
@@ -43,6 +70,7 @@ export interface MapEntity {
     spawnInterval?: number; // Интервал появления (сек)
     maxBottles?: number; // Максимум бутылок
     spawnRadius?: number; // Радиус спавна бутылок (в клетках)
+    propertyType?: PropertyType; // Тип недвижимости для точки покупки
     spriteKey?: string; // Кастомный спрайт (для зданий/NPC)
     label?: string; // Описание/Имя
   };

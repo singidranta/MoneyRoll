@@ -42,3 +42,10 @@ export type JobPoint = {
   x: number;
   y: number;
 };
+
+export type PropertyPoint = {
+  id: string;
+  propertyType: PropertyType;
+  x: number;
+  y: number;
+};

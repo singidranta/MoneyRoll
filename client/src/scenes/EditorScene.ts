@@ -8,7 +8,9 @@ import {
   type TileType,
   type MapDocument,
   type MapEntity,
+  type MapEntityType,
 } from '../../../shared/map';
+import { PROPERTIES, type PropertyType } from '../../../shared/economy';
 import {
   loadMap,
   saveMapDebounced,
@@ -29,7 +31,8 @@ export class EditorScene extends Phaser.Scene {
   private mapJson: MapDocument | null = null;
   private currentTool: 'tile' | 'entity' | 'eraser' = 'tile';
   private selectedTileType: TileType = 'ground-grass';
-  private selectedEntityType: 'kiosk' | 'spawner' | 'npc' | 'building' | 'apartment-1' | 'apartment-2' | 'wall' | 'food-cart' | 'clothing-shop' = 'kiosk';
+  private selectedEntityType: MapEntityType = 'kiosk';
+  private selectedPropertyType: PropertyType = 'shack';
   private currentRotation = 0; // 0, 90, 180, 270
 
   // ============================================================
@@ -247,7 +250,7 @@ export class EditorScene extends Phaser.Scene {
           px,
           py,
           entity.type,
-          entity.type === 'kiosk' ? 1.1 : 1.0
+          entity.type === 'kiosk' ? 1.1 : 1.0,
         );
         break;
       case 'spawner':
@@ -259,6 +262,29 @@ export class EditorScene extends Phaser.Scene {
       case 'building':
         this.renderBuilding(key, entity, px, py);
         break;
+      case 'job-courier':
+        this.renderActionMarker(key, px, py, '🚲', 'РАБОТА: КУРЬЕР', '$2.50–4.00', 0x3b82f6);
+        break;
+      case 'job-lemonade':
+        this.renderActionMarker(key, px, py, '🍋', 'РАБОТА: ЛИМОНАД', '$1.50–2.50', 0xfacc15);
+        break;
+      case 'job-trash-sort':
+      case 'job-trash':
+        this.renderActionMarker(key, px, py, '♻', 'РАБОТА: СОРТИРОВКА', '$1.00–2.00', 0x22c55e);
+        break;
+      case 'property': {
+        const property = PROPERTIES[entity.properties.propertyType ?? 'shack'];
+        this.renderActionMarker(
+          key,
+          px,
+          py,
+          '⌂',
+          `НЕДВИЖИМОСТЬ: ${property.name.toUpperCase()}`,
+          `$${property.price} · +$${property.incomePerMin}/мин`,
+          0xa855f7,
+        );
+        break;
+      }
     }
   }
 
@@ -341,12 +367,77 @@ export class EditorScene extends Phaser.Scene {
       fontFamily: 'monospace',
       fontSize: '13px',
       color: '#ffffff',
-      fontStyle: 'bold'
+      fontStyle: 'bold',
     });
     label.setOrigin(0.5);
 
     visualContainer.add([body, label]);
     this.entitySpritesMap.set(key, visualContainer);
+  }
+
+  /** Временная, но понятная визуализация игровых точек без отдельного ассета. */
+  private renderActionMarker(
+    key: string,
+    px: number,
+    py: number,
+    icon: string,
+    title: string,
+    subtitle: string,
+    color: number,
+  ): void {
+    const visualContainer = this.add.container(px, py);
+    visualContainer.setDepth(100);
+
+    const body = this.add.rectangle(0, 0, 112, 82, color, 0.9);
+    body.setStrokeStyle(3, 0xffffff, 0.9);
+
+    const iconText = this.add.text(-39, 0, icon, {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '30px',
+    });
+    iconText.setOrigin(0.5);
+
+    const titleText = this.add.text(10, -13, title, {
+      fontFamily: 'monospace',
+      fontSize: '9px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+      align: 'center',
+      wordWrap: { width: 72 },
+    });
+    titleText.setOrigin(0.5);
+
+    const subtitleText = this.add.text(10, 20, subtitle, {
+      fontFamily: 'monospace',
+      fontSize: '9px',
+      color: '#f8fafc',
+      align: 'center',
+      wordWrap: { width: 72 },
+    });
+    subtitleText.setOrigin(0.5);
+
+    visualContainer.add([body, iconText, titleText, subtitleText]);
+    this.entitySpritesMap.set(key, visualContainer);
+  }
+
+  private entityLabel(): string | undefined {
+    switch (this.selectedEntityType) {
+      case 'building':
+        return 'МАГАЗИН';
+      case 'npc':
+        return 'Торговец';
+      case 'job-courier':
+        return 'Курьер';
+      case 'job-lemonade':
+        return 'Лимонад';
+      case 'job-trash-sort':
+      case 'job-trash':
+        return 'Сортировка мусора';
+      case 'property':
+        return PROPERTIES[this.selectedPropertyType].name;
+      default:
+        return undefined;
+    }
   }
 
   // ============================================================
@@ -422,8 +513,9 @@ export class EditorScene extends Phaser.Scene {
           spawnInterval: intervalVal,
           maxBottles: maxVal,
           spawnRadius: radiusVal,
-          label: this.selectedEntityType === 'building' ? 'МАГАЗИН' : this.selectedEntityType === 'npc' ? 'Торговец' : undefined
-        }
+          propertyType: this.selectedEntityType === 'property' ? this.selectedPropertyType : undefined,
+          label: this.entityLabel(),
+        },
       };
 
       if (!this.mapJson.entities) this.mapJson.entities = {};
@@ -503,8 +595,14 @@ export class EditorScene extends Phaser.Scene {
         spriteKey = 'apartment-2';
       } else if (this.selectedEntityType === 'wall') {
         spriteKey = 'wall';
-      } else if (this.selectedEntityType === 'npc') {
+      } else if (this.selectedEntityType === 'npc' || this.selectedEntityType === 'job-courier') {
         spriteKey = 'player-sprites';
+      } else if (this.selectedEntityType === 'job-lemonade') {
+        spriteKey = 'food-cart';
+      } else if (this.selectedEntityType === 'job-trash-sort' || this.selectedEntityType === 'job-trash') {
+        spriteKey = 'recycle-machine';
+      } else if (this.selectedEntityType === 'property') {
+        spriteKey = this.selectedPropertyType === 'apartment-big' ? 'apartment-2' : 'apartment-1';
       } else {
         spriteKey = 'bottle-water';
       }
@@ -612,16 +710,36 @@ export class EditorScene extends Phaser.Scene {
       <div id="entity-tool-options" style="margin-bottom:15px; background:rgba(255,255,255,0.05); padding:8px; border-radius:4px; display:none;">
         <strong style="color:#ffd700; display:block; margin-bottom:4px;">ТИП ОБЪЕКТА:</strong>
         <select id="editor-entity-select" style="width:100%; background:#222; color:#fff; border:1px solid #ff6b6b; padding:5px; border-radius:4px; cursor:pointer; margin-bottom:10px;">
-          <option value="kiosk">Recycle Kiosk (Автомат)</option>
-          <option value="spawner">Bottle Spawner (Спавнер)</option>
-          <option value="food-cart">Ларёк с Шаурмой (Магазин)</option>
-          <option value="clothing-shop">Магазин одежды (Гардероб)</option>
-          <option value="apartment-1">Кирпичный дом (Квартира 1)</option>
-          <option value="apartment-2">Панельный дом (Квартира 2)</option>
-          <option value="wall">Забор/Стена (Препятствие)</option>
-          <option value="building">Здание (Декор)</option>
-          <option value="npc">NPC-Житель</option>
+          <optgroup label="Мир и магазины">
+            <option value="kiosk">Recycle Kiosk (Автомат)</option>
+            <option value="spawner">Bottle Spawner (Спавнер)</option>
+            <option value="food-cart">Ларёк с Шаурмой (Магазин)</option>
+            <option value="clothing-shop">Магазин одежды (Гардероб)</option>
+            <option value="apartment-1">Кирпичный дом (Декор)</option>
+            <option value="apartment-2">Панельный дом (Декор)</option>
+            <option value="wall">Забор/Стена (Препятствие)</option>
+            <option value="building">Здание (Декор)</option>
+            <option value="npc">NPC-Житель</option>
+          </optgroup>
+          <optgroup label="Работы">
+            <option value="job-courier">🚲 Работа: курьер</option>
+            <option value="job-lemonade">🍋 Работа: продажа лимонада</option>
+            <option value="job-trash-sort">♻ Работа: сортировка мусора</option>
+          </optgroup>
+          <optgroup label="Инвестиции">
+            <option value="property">⌂ Точка покупки недвижимости</option>
+          </optgroup>
         </select>
+
+        <div id="editor-property-props" style="display:none; border-top:1px solid #444; padding-top:8px; margin-bottom:8px;">
+          <label style="display:block; margin-bottom:5px;">Тип недвижимости:</label>
+          <select id="editor-property-select" style="width:100%; background:#111; color:#d8b4fe; border:1px solid #a855f7; padding:4px; border-radius:3px; cursor:pointer;">
+            <option value="shack">Сарай с бомжами — $120 · +$3/мин</option>
+            <option value="apartment-small">Хрущёвка — $450 · +$12/мин</option>
+            <option value="apartment-big">Пентхаус — $1500 · +$45/мин</option>
+          </select>
+          <div id="editor-property-info" style="color:#d8b4fe; font-size:11px; line-height:1.35; margin-top:6px;"></div>
+        </div>
 
         <div id="editor-spawner-props" style="display:none; border-top:1px solid #444; padding-top:8px;">
           <label style="display:block; margin-bottom:8px;">
@@ -667,10 +785,26 @@ export class EditorScene extends Phaser.Scene {
 
     const entitySelect = sidebar.querySelector('#editor-entity-select') as HTMLSelectElement;
     const spawnerProps = sidebar.querySelector('#editor-spawner-props') as HTMLDivElement;
-    entitySelect.addEventListener('change', () => {
-      this.selectedEntityType = entitySelect.value as any;
+    const propertyProps = sidebar.querySelector('#editor-property-props') as HTMLDivElement;
+    const propertySelect = sidebar.querySelector('#editor-property-select') as HTMLSelectElement;
+    const propertyInfo = sidebar.querySelector('#editor-property-info') as HTMLDivElement;
+
+    const refreshEntityOptions = () => {
       spawnerProps.style.display = this.selectedEntityType === 'spawner' ? 'block' : 'none';
+      propertyProps.style.display = this.selectedEntityType === 'property' ? 'block' : 'none';
+      const property = PROPERTIES[this.selectedPropertyType];
+      propertyInfo.textContent = `${property.name}: покупка $${property.price}, пассивный доход $${property.incomePerMin}/мин.`;
+    };
+
+    entitySelect.addEventListener('change', () => {
+      this.selectedEntityType = entitySelect.value as MapEntityType;
+      refreshEntityOptions();
     });
+    propertySelect.addEventListener('change', () => {
+      this.selectedPropertyType = propertySelect.value as PropertyType;
+      refreshEntityOptions();
+    });
+    refreshEntityOptions();
 
     // Кнопка сохранения
     sidebar.querySelector('#btn-save-editor')?.addEventListener('click', () => {

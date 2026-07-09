@@ -3,6 +3,7 @@
 // ============================================================
 
 import Phaser from 'phaser';
+import { PROPERTIES } from '../../../shared/economy';
 import { parseKey, TILE_SIZE, TILE_SIZE_HALF, type MapDocument, type MapEntity } from '../../../shared/map';
 import { KIOSK_SCALE, OBSTACLE_SCALE } from '../config/WorldConstants';
 
@@ -80,6 +81,28 @@ export class MapRenderer {
         case 'npc':
           this.renderNpc(entity, px, py);
           break;
+        case 'job-courier':
+          this.renderActionMarker(px, py, '🚲', 'КУРЬЕР', '$2.50–4.00', 0x3b82f6);
+          break;
+        case 'job-lemonade':
+          this.renderActionMarker(px, py, '🍋', 'ЛИМОНАД', '$1.50–2.50', 0xfacc15);
+          break;
+        case 'job-trash-sort':
+        case 'job-trash':
+          this.renderActionMarker(px, py, '♻', 'СОРТИРОВКА', '$1.00–2.00', 0x22c55e);
+          break;
+        case 'property': {
+          const property = PROPERTIES[entity.properties.propertyType ?? 'shack'];
+          this.renderActionMarker(
+            px,
+            py,
+            '⌂',
+            property.name.toUpperCase(),
+            `$${property.price} · +$${property.incomePerMin}/мин`,
+            0xa855f7,
+          );
+          break;
+        }
       }
     }
   }
@@ -106,6 +129,47 @@ export class MapRenderer {
     sprite.setDepth(100);
     sprite.setAngle(entity.rotation);
     this.kioskSprites.set(entity.id, sprite);
+  }
+
+  private renderActionMarker(
+    px: number,
+    py: number,
+    icon: string,
+    title: string,
+    subtitle: string,
+    color: number,
+  ): void {
+    const marker = this.scene.add.container(px, py);
+    marker.setDepth(102);
+
+    const body = this.scene.add.rectangle(0, 0, 112, 82, color, 0.92);
+    body.setStrokeStyle(3, 0xffffff, 0.9);
+
+    const iconText = this.scene.add
+      .text(-39, 0, icon, { fontFamily: 'system-ui, sans-serif', fontSize: '30px' })
+      .setOrigin(0.5);
+    const titleText = this.scene.add
+      .text(10, -13, title, {
+        fontFamily: 'monospace',
+        fontSize: '9px',
+        color: '#ffffff',
+        fontStyle: 'bold',
+        align: 'center',
+        wordWrap: { width: 72 },
+      })
+      .setOrigin(0.5);
+    const subtitleText = this.scene.add
+      .text(10, 20, subtitle, {
+        fontFamily: 'monospace',
+        fontSize: '9px',
+        color: '#f8fafc',
+        align: 'center',
+        wordWrap: { width: 72 },
+      })
+      .setOrigin(0.5);
+
+    marker.add([body, iconText, titleText, subtitleText]);
+    this.npcSprites.push(marker);
   }
 
   // ============================================================

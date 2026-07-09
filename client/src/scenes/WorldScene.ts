@@ -5,7 +5,10 @@ import {
   BACKPACK_TIERS,
   BOTTLE_TYPES,
   INVENTORY_SLOTS,
+  PROPERTIES,
   type InventoryItem,
+  type JobType,
+  type PropertyType,
   type ServerBottle,
 } from '../../../shared/economy';
 import {
@@ -114,8 +117,12 @@ export class WorldScene extends Phaser.Scene {
   private nearKioskId: string | null = null;
   private nearFoodCartEntity: MapEntity | null = null;
   private nearClothingShopEntity: MapEntity | null = null;
+  private nearJobEntity: MapEntity | null = null;
+  private nearPropertyEntity: MapEntity | null = null;
   private nearPlayerId: string | null = null;
   private tradeTargetId: string | null = null;
+  private properties: PropertyType[] = [];
+  private hasAuthenticated = false;
   private isInventoryOpen = false;
   private usePrompt!: Phaser.GameObjects.Text;
 
@@ -277,10 +284,28 @@ export class WorldScene extends Phaser.Scene {
         console.log('[MoneyRoll] welcome: my id =', msg.id);
         this.remotes.clearBuffer();
 
-        this.localMoney = msg.money as number;
-        this.localInventory = msg.inventory as (InventoryItem | null)[];
-        this.backpackTier = (msg.backpackTier as number) || 1;
+        this.localMoney = typeof msg.money === 'number' ? msg.money : 5.0;
+        this.localInventory = Array.isArray(msg.inventory)
+          ? msg.inventory as (InventoryItem | null)[]
+          : Array(INVENTORY_SLOTS).fill(null);
+        this.backpackTier = typeof msg.backpackTier === 'number' ? msg.backpackTier : 1;
+        this.hasJacket = msg.hasJacket === true;
+        this.hasSneakers = msg.hasSneakers === true;
+        this.hasCrown = msg.hasCrown === true;
+        this.properties = Array.isArray(msg.properties)
+          ? msg.properties.filter(
+              (property): property is PropertyType =>
+                typeof property === 'string' && property in PROPERTIES,
+            )
+          : [];
+        this.currentWeight = calculateInventoryWeight(this.localInventory);
         this.refreshUI();
+
+        // Первый welcome приходит до авторизации. Второй, после auth, уже несёт сохранение игрока.
+        if (!this.hasAuthenticated) {
+          this.hasAuthenticated = true;
+          this.sendGameMessage({ type: 'auth', token: getOrCreatePlayerToken() });
+        }
 
         if (Array.isArray(msg.players)) {
           const initial = new Map<string, { x: number; y: number }>();
@@ -403,6 +428,44 @@ export class WorldScene extends Phaser.Scene {
       case 'sell-failed':
         this.float(msg.message as string, this.player.x, this.player.y - 20, '#ff3333');
         break;
+
+      case 'job-success': {
+        if (typeof msg.money === 'number') this.localMoney = msg.money;
+        this.updateHud();
+        SoundEffects.playCoinSound();
+        this.float(msg.message as string, this.player.x, this.player.y - 30, '#7cfc00');
+        break;
+      }
+
+      case 'job-failed':
+        this.float(msg.message as string, this.player.x, this.player.y - 20, '#ff9900');
+        break;
+
+      case 'property-success': {
+        if (typeof msg.money === 'number') this.localMoney = msg.money;
+        if (Array.isArray(msg.properties)) {
+          this.properties = msg.properties.filter(
+            (property): property is PropertyType =>
+              typeof property === 'string' && property in PROPERTIES,
+          );
+        }
+        this.updateHud();
+        SoundEffects.playUpgradeSound();
+        this.float(msg.message as string, this.player.x, this.player.y - 30, '#d8b4fe');
+        break;
+      }
+
+      case 'property-failed':
+        this.float(msg.message as string, this.player.x, this.player.y - 20, '#ff9900');
+        break;
+
+      case 'passive-income': {
+        if (typeof msg.money === 'number') this.localMoney = msg.money;
+        this.updateHud();
+        SoundEffects.playCoinSound();
+        this.float(msg.message as string, this.player.x, this.player.y - 35, '#d8b4fe');
+        break;
+      }
 
       case 'upgrade-success': {
         this.backpackTier = msg.backpackTier as number;
@@ -613,40 +676,56 @@ export class WorldScene extends Phaser.Scene {
     let activeKioskId: string | null = null;
     let activeFoodCartEntity: MapEntity | null = null;
     let activeClothingShopEntity: MapEntity | null = null;
-    let targetX = 0;
-    let targetY = 0;
+    let activeJobEntity: MapEntity | null = null;
+    let activePropertyEntity: MapEntity | null = null;
+    let nearestEntityDistance = INTERACT_RADIUS;
+    let targetX = this.player.x;
+    let targetY = this.player.y;
 
     if (this.mapJson?.entities) {
       for (const entity of Object.values(this.mapJson.entities)) {
+        if (!this.isInteractiveEntity(entity)) continue;
+
         const kx = entity.cellX * TILE_SIZE + TILE_SIZE_HALF;
         const ky = entity.cellY * TILE_SIZE + TILE_SIZE_HALF;
         const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, kx, ky);
+        if (dist >= nearestEntityDistance) continue;
 
-        if (dist < INTERACT_RADIUS) {
-          if (entity.type === 'kiosk') activeKioskId = entity.id;
-          else if (entity.type === 'food-cart') activeFoodCartEntity = entity;
-          else if (entity.type === 'clothing-shop') activeClothingShopEntity = entity;
-          targetX = kx;
-          targetY = ky;
-          break;
-        }
+        nearestEntityDistance = dist;
+        targetX = kx;
+        targetY = ky;
+        activeKioskId = entity.type === 'kiosk' ? entity.id : null;
+        activeFoodCartEntity = entity.type === 'food-cart' ? entity : null;
+        activeClothingShopEntity = entity.type === 'clothing-shop' ? entity : null;
+        activeJobEntity = this.jobTypeForEntity(entity) ? entity : null;
+        activePropertyEntity = entity.type === 'property' ? entity : null;
       }
     }
 
     this.nearKioskId = activeKioskId;
     this.nearFoodCartEntity = activeFoodCartEntity;
     this.nearClothingShopEntity = activeClothingShopEntity;
+    this.nearJobEntity = activeJobEntity;
+    this.nearPropertyEntity = activePropertyEntity;
     this.detectNearbyPlayer();
 
-    const nearAnyShop = this.nearKioskId || this.nearFoodCartEntity || this.nearClothingShopEntity;
+    const nearAnyWorldInteraction =
+      this.nearKioskId ||
+      this.nearFoodCartEntity ||
+      this.nearClothingShopEntity ||
+      this.nearJobEntity ||
+      this.nearPropertyEntity;
     const nearPlayer = this.nearPlayerId !== null;
 
-    if (nearAnyShop || nearPlayer) {
+    if (nearAnyWorldInteraction || nearPlayer) {
       this.usePrompt.setPosition(targetX, targetY - PROMPT_OFFSET_Y);
+      this.usePrompt.setText(this.interactionPrompt());
       this.usePrompt.setVisible(true);
 
       if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
-        if (nearPlayer && !nearAnyShop) this.showPlayerInteractionMenu();
+        if (this.nearJobEntity) this.completeNearbyJob();
+        else if (this.nearPropertyEntity) this.buyNearbyProperty();
+        else if (nearPlayer && !nearAnyWorldInteraction) this.showPlayerInteractionMenu();
         else this.toggleInventory(true);
       }
     } else {
@@ -681,6 +760,76 @@ export class WorldScene extends Phaser.Scene {
       return true;
     }
     return false;
+  }
+
+  // ============================================================
+  //  SECTION: JOBS & PROPERTY INTERACTION
+  // ============================================================
+
+  private isInteractiveEntity(entity: MapEntity): boolean {
+    return (
+      entity.type === 'kiosk' ||
+      entity.type === 'food-cart' ||
+      entity.type === 'clothing-shop' ||
+      this.jobTypeForEntity(entity) !== null ||
+      entity.type === 'property'
+    );
+  }
+
+  private jobTypeForEntity(entity: MapEntity): JobType | null {
+    if (entity.type === 'job-courier') return 'courier';
+    if (entity.type === 'job-lemonade') return 'lemonade';
+    if (entity.type === 'job-trash-sort' || entity.type === 'job-trash') return 'trash-sort';
+    return null;
+  }
+
+  private propertyTypeForEntity(entity: MapEntity): PropertyType | null {
+    const propertyType = entity.properties.propertyType;
+    if (propertyType && propertyType in PROPERTIES) return propertyType;
+    return null;
+  }
+
+  private interactionPrompt(): string {
+    const jobType = this.nearJobEntity ? this.jobTypeForEntity(this.nearJobEntity) : null;
+    if (jobType === 'courier') return '[E] Работать курьером';
+    if (jobType === 'lemonade') return '[E] Продавать лимонад';
+    if (jobType === 'trash-sort') return '[E] Сортировать мусор';
+
+    if (this.nearPropertyEntity) {
+      const propertyType = this.propertyTypeForEntity(this.nearPropertyEntity);
+      if (propertyType) {
+        const property = PROPERTIES[propertyType];
+        return this.properties.includes(propertyType)
+          ? `[E] ${property.name}: куплено`
+          : `[E] Купить ${property.name}: $${property.price}`;
+      }
+    }
+
+    if (this.nearKioskId) return '[E] Сдать бутылки';
+    if (this.nearFoodCartEntity) return '[E] Купить еду';
+    if (this.nearClothingShopEntity) return '[E] Магазин одежды';
+    return '[E] Игрок';
+  }
+
+  private completeNearbyJob(): void {
+    if (!this.nearJobEntity) return;
+    const jobType = this.jobTypeForEntity(this.nearJobEntity);
+    if (!jobType) return;
+    this.sendGameMessage({ type: 'job-complete', jobType });
+  }
+
+  private buyNearbyProperty(): void {
+    if (!this.nearPropertyEntity) return;
+    const propertyType = this.propertyTypeForEntity(this.nearPropertyEntity);
+    if (!propertyType) {
+      this.float('У этой точки не задан тип недвижимости.', this.player.x, this.player.y - 20, '#ff3333');
+      return;
+    }
+    if (this.properties.includes(propertyType)) {
+      this.float('Эта недвижимость уже куплена.', this.player.x, this.player.y - 20, '#d8b4fe');
+      return;
+    }
+    this.sendGameMessage({ type: 'buy-property', propertyType });
   }
 
   // ============================================================
