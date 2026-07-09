@@ -186,9 +186,9 @@ wss.on('connection', (ws, req) => {
   const remote = req.socket.remoteAddress ?? 'unknown';
   console.log(`[MoneyRoll][server] +client ${id} from ${remote}`);
 
-  world.add(id, ws);
+  world.add(id, ws, null);
 
-  // Привет + стартовый список игроков, бутылок, киосков, денег и инвентаря.
+  // Привет – без токена пока $5, клиент потом пришлёт auth с токеном
   const playerClient = world.getClient(id);
   ws.send(JSON.stringify({
     type: 'welcome',
@@ -197,7 +197,12 @@ wss.on('connection', (ws, req) => {
     bottles: world.getBottles(),
     kiosks: world.getKiosks(),
     money: playerClient?.money ?? 5.0,
-    inventory: playerClient?.inventory ?? Array(12).fill(null)
+    inventory: playerClient?.inventory ?? Array(12).fill(null),
+    backpackTier: playerClient?.backpackTier ?? 1,
+    hasJacket: playerClient?.hasJacket ?? false,
+    hasSneakers: playerClient?.hasSneakers ?? false,
+    hasCrown: playerClient?.hasCrown ?? false,
+    properties: playerClient?.properties ?? [],
   }));
 
   // Сообщаем остальным, что новый игрок появился.
