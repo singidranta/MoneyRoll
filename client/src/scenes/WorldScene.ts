@@ -136,6 +136,11 @@ export class WorldScene extends Phaser.Scene {
   private trainingCompleted: string[] = [];
   private nearSchoolEntity: MapEntity | null = null;
 
+  // Courier delivery state (simple: no sorting, just parcel + house)
+  private activeDeliveryTarget: { x: number; y: number; key: string } | null = null;
+  private hasParcel = false;
+  private deliveryHighlight?: Phaser.GameObjects.Graphics;
+
   // ============================================================
   //  SECTION: UI
   // ============================================================
@@ -725,6 +730,18 @@ export class WorldScene extends Phaser.Scene {
     let targetX = this.player.x;
     let targetY = this.player.y;
 
+    let nearDeliveryHouse = false;
+    let deliveryDist = Infinity;
+
+    if (this.activeDeliveryTarget) {
+      deliveryDist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.activeDeliveryTarget.x, this.activeDeliveryTarget.y);
+      if (deliveryDist < INTERACT_RADIUS) {
+        nearDeliveryHouse = true;
+        targetX = this.activeDeliveryTarget.x;
+        targetY = this.activeDeliveryTarget.y - 20;
+      }
+    }
+
     if (this.mapJson?.entities) {
       for (const entity of Object.values(this.mapJson.entities)) {
         if (!this.isInteractiveEntity(entity)) continue;
@@ -769,7 +786,9 @@ export class WorldScene extends Phaser.Scene {
       this.usePrompt.setVisible(true);
 
       if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
-        if (this.nearSchoolEntity) this.openSchool();
+        if (nearDeliveryHouse && this.hasParcel && this.activeDeliveryTarget) {
+          this.deliverParcel();
+        } else if (this.nearSchoolEntity) this.openSchool();
         else if (this.nearJobEntity) this.completeNearbyJob();
         else if (this.nearPropertyEntity) this.buyNearbyProperty();
         else if (nearPlayer && !nearAnyWorldInteraction) this.showPlayerInteractionMenu();
@@ -825,13 +844,9 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private jobTypeForEntity(entity: MapEntity): JobType | null {
-    if (entity.type === 'job-courier' || entity.type === 'courier-hub') return 'courier';
-    if (entity.type === 'job-lemonade' || entity.type === 'lemonade-stand') return 'lemonade';
-    if (
-      entity.type === 'job-trash-sort' ||
-      entity.type === 'job-trash' ||
-      entity.type === 'trash-sort-station'
-    ) return 'trash-sort';
+    if (entity.type === 'courier-hub') return 'courier';
+    if (entity.type === 'lemonade-stand') return 'lemonade';
+    if (entity.type === 'trash-sort-station') return 'trash-sort';
     return null;
   }
 
@@ -846,9 +861,13 @@ export class WorldScene extends Phaser.Scene {
 
     const jobType = this.nearJobEntity ? this.jobTypeForEntity(this.nearJobEntity) : null;
     if (jobType === 'courier') {
-      return this.licenses.courier
-        ? '[E] Работать курьером'
-        : '[E] Нужно образование курьера — иди в школу';
+      if (!this.licenses.courier) {
+        return '[E] Нужно образование курьера — иди в школу';
+      }
+      if (this.hasParcel && this.activeDeliveryTarget) {
+        return '[E] Отнести посылку в дом';
+      }
+      return '[E] Взять посылку (курьер)';
     }
     if (jobType === 'lemonade') {
       return this.licenses.lemonadeBusiness
@@ -896,17 +915,128 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
-    // Запуск реальной мини-игры
+    if (jobType === 'courier') {
+      this.handleCourierJob();
+      return;
+    }
+
+    // Запуск реальной мини-игры для остальных работ
     const finish = (score: number) => {
       this.sendGameMessage({ type: 'job-submit', jobType, score });
     };
     if (jobType === 'trash-sort') {
       this.jobUI.showTrashSort(finish, ()=>{});
-    } else if (jobType === 'courier') {
-      this.jobUI.showCourier(finish, ()=>{});
     } else if (jobType === 'lemonade') {
       this.jobUI.showLemonade(finish, ()=>{});
     }
+  }
+
+  private handleCourierJob(): void {
+    const hub = this.nearJobEntity;
+    if (!hub) return;
+
+    if (this.hasParcel && this.activeDeliveryTarget) {
+      this.float('У тебя уже есть посылка. Отнеси её в подсвеченный дом!', this.player.x, this.player.y - 25, '#ff9900');
+      return;
+    }
+
+    // Взять новую посылку
+    const activeSlots = getActiveSlotsCount(this.backpackTier);
+    let freeSlot = -1;
+    for (let i = 0; i < activeSlots; i++) {
+      if (this.localInventory[i] === null) { freeSlot = i; break; }
+    }
+    if (freeSlot === -1) {
+      this.float('Инвентарь полон! Освободи слот для посылки.', this.player.x, this.player.y - 25, '#ff3333');
+      return;
+    }
+
+    // Найти случайный жилой дом (apartment-1 или apartment-2)
+    const entities = this.mapJson?.entities ? Object.values(this.mapJson.entities) : [];
+    const houses = entities.filter(e => e.type === 'apartment-1' || e.type === 'apartment-2');
+    if (houses.length === 0) {
+      this.float('На карте нет жилых домов! Поставь apartment в редакторе.', this.player.x, this.player.y - 25, '#ff3333');
+      return;
+    }
+
+    const targetHouse = houses[Math.floor(Math.random() * houses.length)];
+    const tx = targetHouse.cellX * TILE_SIZE + TILE_SIZE_HALF;
+    const ty = targetHouse.cellY * TILE_SIZE + TILE_SIZE_HALF;
+    const key = `${targetHouse.cellX},${targetHouse.cellY}`;
+
+    this.localInventory[freeSlot] = 'parcel';
+    this.hasParcel = true;
+    this.activeDeliveryTarget = { x: tx, y: ty, key };
+    this.currentWeight = calculateInventoryWeight(this.localInventory);
+
+    this.refreshUI();
+    this.highlightDeliveryTarget();
+
+    this.float('Взял посылку! Доставь в подсвеченный жилой дом.', this.player.x, this.player.y - 30, '#7cfc00');
+    SoundEffects.playPopSound();
+  }
+
+  private highlightDeliveryTarget(): void {
+    if (this.deliveryHighlight) {
+      this.deliveryHighlight.destroy();
+    }
+    if (!this.activeDeliveryTarget) return;
+
+    const g = this.add.graphics();
+    g.setDepth(900);
+    g.lineStyle(4, 0x00ff88, 0.9);
+    g.strokeCircle(this.activeDeliveryTarget.x, this.activeDeliveryTarget.y, 70);
+
+    // pulsing inner
+    const inner = this.add.graphics();
+    inner.setDepth(899);
+    inner.fillStyle(0x00ff88, 0.15);
+    inner.fillCircle(this.activeDeliveryTarget.x, this.activeDeliveryTarget.y, 55);
+
+    this.deliveryHighlight = g;
+
+    // simple pulse tween
+    this.tweens.add({
+      targets: g,
+      alpha: { from: 0.4, to: 1 },
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+  }
+
+  private clearDeliveryHighlight(): void {
+    if (this.deliveryHighlight) {
+      this.deliveryHighlight.destroy();
+      this.deliveryHighlight = undefined;
+    }
+  }
+
+  private deliverParcel(): void {
+    if (!this.hasParcel || !this.activeDeliveryTarget) return;
+
+    const targetKey = this.activeDeliveryTarget.key;
+    const slotIdx = this.localInventory.findIndex(i => i === 'parcel');
+    if (slotIdx === -1) return;
+
+    // Remove parcel
+    this.localInventory[slotIdx] = null;
+    this.hasParcel = false;
+
+    const target = this.activeDeliveryTarget;
+    this.activeDeliveryTarget = null;
+    this.currentWeight = calculateInventoryWeight(this.localInventory);
+
+    this.clearDeliveryHighlight();
+
+    // Reward courier (simple fixed + accuracy)
+    const rewardScore = 100;
+    this.sendGameMessage({ type: 'job-submit', jobType: 'courier', score: rewardScore });
+
+    this.refreshUI();
+    this.float('Посылка доставлена! +деньги на счёт.', this.player.x, this.player.y - 35, '#00ff88');
+    SoundEffects.playCoinSound();
   }
 
   private openSchool(): void {
@@ -1033,6 +1163,13 @@ export class WorldScene extends Phaser.Scene {
     if (isBag(item) && this.equippedBag === item) {
       this.float('Сначала сними сумку!', this.player.x, this.player.y - 20, '#ff9900');
       return;
+    }
+
+    if (item === 'parcel' && this.hasParcel) {
+      this.hasParcel = false;
+      this.activeDeliveryTarget = null;
+      this.clearDeliveryHighlight();
+      this.float('Посылка выброшена — заказ отменён.', this.player.x, this.player.y - 25, '#ff9900');
     }
 
     this.localInventory[slotIdx] = null;

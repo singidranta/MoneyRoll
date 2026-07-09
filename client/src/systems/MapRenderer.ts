@@ -75,16 +75,12 @@ export class MapRenderer {
           this.renderBuildingSprite(entity, px, py, 'school', 1.0);
           break;
         case 'courier-hub':
-        case 'job-courier':
           this.renderBuildingSprite(entity, px, py, 'courier-hub', 0.9);
           break;
         case 'trash-sort-station':
-        case 'job-trash-sort':
-        case 'job-trash':
           this.renderBuildingSprite(entity, px, py, 'trash-sort-station', 0.9);
           break;
         case 'lemonade-stand':
-        case 'job-lemonade':
           this.renderBuildingSprite(entity, px, py, 'lemonade-stand', 0.9);
           break;
         case 'apartment-1':

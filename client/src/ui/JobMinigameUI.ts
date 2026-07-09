@@ -197,21 +197,12 @@ export class JobMinigameUI {
     document.addEventListener('keydown', keyHandler);
   }
 
-  // --- COURIER MINIGAME ---
+  // --- COURIER MINIGAME (legacy, not used anymore) ---
   showCourier(onFinish: JobStartCallback, onClose: () => void): void {
+    // Simple courier is now handled directly in WorldScene (parcel → house)
+    onFinish(85); // fallback reward if ever called
     this.destroy();
-    const root = document.createElement('div');
-    root.id = 'courier-minigame';
-    root.style.cssText = `position:fixed;inset:0;background:rgba(5,7,10,0.92);z-index:5000;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;`;
-    root.innerHTML = `
-      <div style="background:#10151f;border:1px solid #2a3242;border-radius:18px;width:min(1000px,96vw);color:#e8eaed;overflow:hidden">
-        <div style="padding:16px 22px;border-bottom:1px solid #2a3242">
-          <b>🚲 Курьер PRO – сортировка + доставка</b>
-          <div style="font-size:12px;color:#9aa3b2">Этап 1/2: рассортируй посылки по районам, затем развезёшь</div>
-          <div style="margin-top:8px;height:6px;background:#1b2333;border-radius:4px;overflow:hidden"><div id="courier-progress" style="height:100%;width:0%;background:linear-gradient(90deg,#3b82f6,#22c55e);transition:width .3s"></div></div>
-        </div>
-        <div style="padding:18px 22px" id="courier-stage"></div>
-      </div>`;
+  }
     document.body.appendChild(root);
     this.root = root;
     const stageEl = root.querySelector('#courier-stage') as HTMLElement;

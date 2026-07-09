@@ -105,21 +105,14 @@ export class World {
           y: entity.cellY * TILE_SIZE + TILE_SIZE_HALF,
         });
       } else if (
-        entityType === 'job-courier' ||
         entityType === 'courier-hub' ||
-        entityType === 'job-lemonade' ||
         entityType === 'lemonade-stand' ||
-        entityType === 'job-trash-sort' ||
-        entityType === 'trash-sort-station' ||
-        entityType === 'job-trash'
+        entityType === 'trash-sort-station'
       ) {
-        // Старые job-* и новые здания профессий работают одинаково.
         const jobType: JobType =
-          entityType === 'job-trash' ||
-          entityType === 'job-trash-sort' ||
           entityType === 'trash-sort-station'
             ? 'trash-sort'
-            : entityType === 'job-courier' || entityType === 'courier-hub'
+            : entityType === 'courier-hub'
               ? 'courier'
               : 'lemonade';
         this.jobPoints.push({

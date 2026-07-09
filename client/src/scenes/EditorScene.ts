@@ -246,21 +246,15 @@ export class EditorScene extends Phaser.Scene {
       case 'wall':
       case 'school':
       case 'courier-hub':
-      case 'job-courier':
       case 'trash-sort-station':
-      case 'job-trash-sort':
-      case 'job-trash':
       case 'lemonade-stand':
-      case 'job-lemonade':
         this.renderImageEntity(
           key,
           entity,
           px,
           py,
-          entity.type === 'job-courier' ? 'courier-hub'
-            : entity.type === 'job-trash-sort' || entity.type === 'job-trash' ? 'trash-sort-station'
-              : entity.type === 'job-lemonade' ? 'lemonade-stand' : entity.type,
-          entity.type === 'kiosk' ? 1.1 : 0.9,
+          entity.type,
+          0.9,
         );
         break;
       case 'spawner':
@@ -383,12 +377,11 @@ export class EditorScene extends Phaser.Scene {
         return 'МАГАЗИН';
       case 'npc':
         return 'Торговец';
-      case 'job-courier':
+      case 'courier-hub':
         return 'Курьер';
-      case 'job-lemonade':
+      case 'lemonade-stand':
         return 'Лимонад';
-      case 'job-trash-sort':
-      case 'job-trash':
+      case 'trash-sort-station':
         return 'Сортировка мусора';
       case 'property':
         return PROPERTIES[this.selectedPropertyType].name;
@@ -556,15 +549,11 @@ export class EditorScene extends Phaser.Scene {
         spriteKey = 'school';
       } else if (this.selectedEntityType === 'npc') {
         spriteKey = 'player-sprites';
-      } else if (this.selectedEntityType === 'job-courier' || this.selectedEntityType === 'courier-hub') {
+      } else if (this.selectedEntityType === 'courier-hub') {
         spriteKey = 'courier-hub';
-      } else if (
-        this.selectedEntityType === 'job-trash-sort' ||
-        this.selectedEntityType === 'job-trash' ||
-        this.selectedEntityType === 'trash-sort-station'
-      ) {
+      } else if (this.selectedEntityType === 'trash-sort-station') {
         spriteKey = 'trash-sort-station';
-      } else if (this.selectedEntityType === 'job-lemonade' || this.selectedEntityType === 'lemonade-stand') {
+      } else if (this.selectedEntityType === 'lemonade-stand') {
         spriteKey = 'lemonade-stand';
       } else if (this.selectedEntityType === 'property') {
         spriteKey = this.selectedPropertyType === 'shack'
@@ -686,20 +675,17 @@ export class EditorScene extends Phaser.Scene {
             <option value="spawner">Bottle Spawner (Спавнер)</option>
             <option value="food-cart">Ларёк с Шаурмой (Магазин)</option>
             <option value="clothing-shop">Магазин одежды (Гардероб)</option>
-            <option value="school">🎓 Школа Курьеров</option>
-            <option value="apartment-1">Кирпичный дом (Декор)</option>
-            <option value="apartment-2">Панельный дом (Декор)</option>
+            <option value="school">🎓 Школа профессий</option>
+            <option value="apartment-1">Кирпичный жилой дом</option>
+            <option value="apartment-2">Панельный жилой дом</option>
             <option value="wall">Забор/Стена (Препятствие)</option>
             <option value="building">Здание (Декор)</option>
             <option value="npc">NPC-Житель</option>
           </optgroup>
-          <optgroup label="Работы v2">
-            <option value="job-courier">🚲 Курьер PRO</option>
-            <option value="courier-hub">📦 Курьер-Хаб (сортировка)</option>
-            <option value="job-trash-sort">♻ Сортировка мусора</option>
-            <option value="trash-sort-station">🗑️ Станция сортировки</option>
-            <option value="job-lemonade">🍋 Лимонад-точка</option>
-            <option value="lemonade-stand">🍋 Лимонад-стенд бизнес</option>
+          <optgroup label="Работы">
+            <option value="courier-hub">📦 Курьер-Хаб</option>
+            <option value="trash-sort-station">♻ Станция сортировки</option>
+            <option value="lemonade-stand">🍋 Лимонад-стенд</option>
           </optgroup>
           <optgroup label="Инвестиции">
             <option value="property">⌂ Точка покупки недвижимости</option>

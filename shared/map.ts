@@ -46,13 +46,7 @@ export const MAP_ENTITY_TYPES = [
   'wall',
   'food-cart',
   'clothing-shop',
-  'job-courier',
-  'job-lemonade',
-  'job-trash-sort',
-  // Поддержка короткого имени из ранней серверной реализации.
-  'job-trash',
   'property',
-  // v2 новые
   'school',
   'courier-hub',
   'trash-sort-station',
