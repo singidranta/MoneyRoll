@@ -37,12 +37,14 @@ export function getItemName(item: InventoryItem): string {
   if (item === 'backpack-tourist') return 'Рюкзак туриста';
   if (item === 'shawarma') return 'Шаурма';
   if (item === 'energy') return 'Ягуар';
+  if (item === 'parcel') return 'Посылка';
   return BOTTLE_TYPES[item as BottleType]?.name ?? item;
 }
 
 export function getItemWeight(item: InventoryItem): number {
   if (isBag(item)) return GEAR_WEIGHTS[item];
   if (isFood(item)) return FOOD_WEIGHTS[item];
+  if (item === 'parcel') return 1.5;
   return BOTTLE_TYPES[item as BottleType]?.weight ?? 0;
 }
 
@@ -74,6 +76,7 @@ export function getItemWebpPath(item: InventoryItem): string {
   if (isBag(item)) return `/assets/props/flat/bags/${item}.webp`;
   if (item === 'shawarma') return '/assets/props/flat/food/shawarma.webp';
   if (item === 'energy') return '/assets/props/flat/food/energy-drink.webp';
+  if (item === 'parcel') return '/assets/props/flat/parcel.webp'; // fallback if no asset
   return `/assets/props/flat/bottles/${item}.webp`;
 }
 
@@ -82,6 +85,7 @@ export function getItemSpriteKey(item: InventoryItem): string {
   if (isBag(item)) return item;
   if (item === 'shawarma') return 'shawarma';
   if (item === 'energy') return 'energy-drink';
+  if (item === 'parcel') return 'bottle-water'; // use any existing sprite as parcel placeholder
   return BOTTLE_TYPES[item as BottleType]?.spriteKey ?? 'bottle-water';
 }
 

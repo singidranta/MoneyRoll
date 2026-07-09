@@ -6,7 +6,8 @@ export type InventoryItem =
   | 'bag-adidas'
   | 'backpack-tourist'
   | 'shawarma'
-  | 'energy';
+  | 'energy'
+  | 'parcel';
 
 export type BottleType = 'water' | 'beer-glass' | 'wine' | 'champagne' | 'bordeaux-1982';
 
@@ -39,6 +40,8 @@ export const FOOD_WEIGHTS: Record<'shawarma' | 'energy', number> = {
   shawarma: 0.5,
   energy: 0.3,
 };
+
+export const PARCEL_WEIGHT = 1.5;
 
 export const GEAR_WEIGHTS: Record<'bag-adidas' | 'backpack-tourist', number> = {
   'bag-adidas': 0.0,
@@ -133,7 +136,7 @@ export type JobType = 'courier' | 'lemonade' | 'trash-sort';
 
 // Новая система: реальные мини-игры, хорошая оплата, школа и лицензии
 export const JOB_REWARDS: Record<JobType, { min: number; max: number; cooldownMs: number; baseXp: number }> = {
-  // Курьер: сортировка + доставка, требует лицензию из школы
+  // Курьер: взял посылку и отвёз в жилой дом (без сортировки)
   courier: { min: 8.0, max: 22.0, cooldownMs: 8000, baseXp: 15 },
   // Лимонад: ритм-игра. После попытки следующая смена доступна через 60 секунд.
   lemonade: { min: 4.5, max: 9.5, cooldownMs: 60_000, baseXp: 8 },
