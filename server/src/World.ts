@@ -7,11 +7,18 @@ import {
   BOTTLE_TYPES,
   INVENTORY_SLOTS,
   PROPERTIES,
+  DEFAULT_JOB_SKILLS,
+  DEFAULT_LICENSES,
+  TRAINING_COURSES,
+  COURIER_RANKS,
+  getCourierRank,
   type BottleType,
   type InventoryItem,
   type JobType,
   type PropertyType,
   type ServerBottle,
+  type JobSkills,
+  type JobLicense,
 } from '../../shared/economy.js';
 import {
   cellKey,
@@ -27,6 +34,8 @@ import {
   handleBuyShopItem,
   handleEquipBag,
   handleJobComplete,
+  handleJobStart,
+  handleTrainingBuy,
   handlePickupBottle,
   handleSellAll,
   handleSellSlot,
@@ -249,6 +258,14 @@ export class World {
       properties: save?.properties ?? [],
       lastJobAt: { courier: 0, lemonade: 0, 'trash-sort': 0 },
       playerToken,
+      jobSkills: save?.jobSkills
+        ? { ...DEFAULT_JOB_SKILLS, ...save.jobSkills }
+        : JSON.parse(JSON.stringify(DEFAULT_JOB_SKILLS)),
+      licenses: save?.licenses
+        ? { ...DEFAULT_LICENSES, ...save.licenses }
+        : { ...DEFAULT_LICENSES },
+      trainingCompleted: save?.trainingCompleted ?? [],
+      activeJob: null,
     };
 
     this.clients.set(id, client);
@@ -323,6 +340,9 @@ export class World {
             c.hasSneakers = save.hasSneakers;
             c.hasCrown = save.hasCrown;
             c.properties = save.properties ?? [];
+            if (save.jobSkills) c.jobSkills = { ...DEFAULT_JOB_SKILLS, ...save.jobSkills };
+            if (save.licenses) c.licenses = { ...DEFAULT_LICENSES, ...save.licenses };
+            c.trainingCompleted = save.trainingCompleted ?? [];
           }
           c.playerToken = token;
           this.playerStore.saveClient(c);
@@ -338,6 +358,9 @@ export class World {
             hasSneakers: c.hasSneakers,
             hasCrown: c.hasCrown,
             properties: c.properties,
+            jobSkills: c.jobSkills,
+            licenses: c.licenses,
+            trainingCompleted: c.trainingCompleted,
             players: this.snapshot(fromId),
             bottles: this.getBottles(),
           }),
@@ -380,8 +403,17 @@ export class World {
         handleUnequipBag(c, eco);
         break;
 
+      case 'job-start':
+        handleJobStart(c, msg, eco);
+        break;
+
       case 'job-complete':
+      case 'job-submit':
         handleJobComplete(c, msg, eco);
+        break;
+
+      case 'training-buy':
+        handleTrainingBuy(c, msg, eco);
         break;
 
       case 'buy-property':

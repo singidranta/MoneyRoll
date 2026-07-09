@@ -9,6 +9,9 @@ import {
   JOB_REWARDS,
   PROPERTIES,
   SHOP_PRICES,
+  COURIER_RANKS,
+  getCourierRank,
+  TRAINING_COURSES,
   type BottleType,
   type InventoryItem,
   type JobType,
@@ -355,7 +358,7 @@ export function handleJobComplete(c: Client, msg: WireMessage, ctx: EconomyConte
   if (!job) return;
   const now = Date.now();
   if (now - (c.lastJobAt[jobType] ?? 0) < job.cooldownMs) {
-    send(c, { type: 'job-failed', message: 'Подожди немного!' });
+    send(c, { type: 'job-failed', message: 'Подожди немного! Перезарядка...' });
     return;
   }
   let near = false;
@@ -370,17 +373,173 @@ export function handleJobComplete(c: Client, msg: WireMessage, ctx: EconomyConte
     send(c, { type: 'job-failed', message: 'Подойди к месту работы!' });
     return;
   }
+
+  // --- Проверка лицензий ---
+  if (jobType === 'courier' && !c.licenses.courier) {
+    send(c, { type: 'job-failed', message: 'Нужна лицензия курьера! Сходи в Школу Курьеров ($25)' });
+    return;
+  }
+  if (jobType === 'trash-sort' && !c.licenses.trashSort) {
+    send(c, { type: 'job-failed', message: 'Нужен сертификат сортировщика! Школа экологии ($15)' });
+    return;
+  }
+
   c.lastJobAt[jobType] = now;
-  const reward = job.min + Math.random() * (job.max - job.min);
+
+  // --- Мини-игра: score 0-100 приходит с клиента ---
+  const clientScore = typeof msg.score === 'number' ? Math.max(0, Math.min(100, msg.score)) : 70 + Math.random()*30;
+  const accuracy = clientScore / 100;
+
+  // Скилл игрока
+  const skill = c.jobSkills[jobType] ?? { level: 0, xp: 0, jobsCompleted: 0 };
+  const skillBonus = 1 + skill.level * 0.12; // +12% за уровень
+
+  let rankMultiplier = 1;
+  let rankName = '';
+  if (jobType === 'courier') {
+    const rank = getCourierRank(skill.level);
+    rankMultiplier = COURIER_RANKS[rank].payMultiplier;
+    rankName = COURIER_RANKS[rank].name;
+  }
+
+  // База + аккуратность
+  const baseReward = job.min + (job.max - job.min) * accuracy;
+  let reward = baseReward * skillBonus * rankMultiplier;
+
+  // Бонус за идеал
+  if (accuracy >= 0.95) reward *= 1.25;
+  // Штраф за плохо
+  if (accuracy < 0.6) reward *= 0.7;
+
+  reward = parseFloat(reward.toFixed(2));
+
+  // --- XP и левелап ---
+  const xpGain = Math.round(job.baseXp * (0.5 + accuracy));
+  skill.xp += xpGain;
+  skill.jobsCompleted += 1;
+  let leveledUp = false;
+  const xpNeeded = 50 + skill.level * 25;
+  if (skill.xp >= xpNeeded && skill.level < 10) {
+    skill.level += 1;
+    skill.xp = 0;
+    leveledUp = true;
+  }
+  c.jobSkills[jobType] = skill;
+
   c.money = parseFloat((c.money + reward).toFixed(2));
   ctx.saveClient(c);
+
+  const messages: Record<JobType, string> = {
+    courier: `📦 Доставка завершена! ${rankName ? `[${rankName}] ` : ''}Точность: ${clientScore}%`,
+    'trash-sort': `♻ Отсортировано! Точность: ${clientScore}%`,
+    lemonade: `🍋 Лимонад продан! Ритм: ${clientScore}%`,
+  };
+
   send(c, {
     type: 'job-success',
     jobType,
     reward,
     money: c.money,
-    message: `Заработано: $${reward.toFixed(2)}`,
+    skill,
+    leveledUp,
+    accuracy: clientScore,
+    message: `${messages[jobType]} +$${reward.toFixed(2)}${leveledUp ? ` | 🎉 LVL UP → ${skill.level}!` : ''}`,
   });
+}
+
+// --- НОВОЕ: Школа / Training ---
+export function handleTrainingBuy(c: Client, msg: WireMessage, ctx: EconomyContext): void {
+  const courseId = msg.courseId as string;
+  const course = TRAINING_COURSES.find(tc => tc.id === courseId);
+  if (!course) {
+    send(c, { type: 'training-failed', message: 'Курс не найден' });
+    return;
+  }
+  if (c.trainingCompleted.includes(courseId)) {
+    send(c, { type: 'training-failed', message: 'Курс уже пройден' });
+    return;
+  }
+  if (c.money < course.cost) {
+    send(c, { type: 'training-failed', message: `Нужно $${course.cost}, у тебя $${c.money.toFixed(2)}` });
+    return;
+  }
+  // Проверка уровня (берём максимальный скилл среди указанных)
+  let meetsLevel = true;
+  for (const [jt, boost] of Object.entries(course.skillBoost)) {
+    const s = c.jobSkills[jt as JobType];
+    if (s && s.level < course.requiredLevel) meetsLevel = false;
+  }
+  if (!meetsLevel) {
+    send(c, { type: 'training-failed', message: `Нужен уровень ${course.requiredLevel} для этого курса` });
+    return;
+  }
+
+  c.money -= course.cost;
+  c.trainingCompleted.push(courseId);
+
+  // Выдаём лицензии / навыки
+  if (course.unlocks.includes('courier_license')) c.licenses.courier = true;
+  if (course.unlocks.includes('trash_cert')) c.licenses.trashSort = true;
+  if (course.unlocks.includes('lemonade_stand_purchase')) c.licenses.lemonadeBusiness = true;
+
+  // Буст скилла
+  for (const [jt, boost] of Object.entries(course.skillBoost)) {
+    const sk = c.jobSkills[jt as JobType];
+    if (sk) {
+      sk.level = Math.min(10, sk.level + (boost as number));
+      sk.xp = 0;
+    }
+  }
+
+  ctx.saveClient(c);
+  send(c, {
+    type: 'training-success',
+    courseId,
+    money: c.money,
+    jobSkills: c.jobSkills,
+    licenses: c.licenses,
+    trainingCompleted: c.trainingCompleted,
+    message: `🎓 Обучение завершено: ${course.name}!`,
+  });
+}
+
+// job-start: выдаёт задание клиенту
+export function handleJobStart(c: Client, msg: WireMessage, ctx: EconomyContext): void {
+  const jobType = msg.jobType as JobType;
+  if (!JOB_REWARDS[jobType]) return;
+
+  // проверка лицензии
+  if (jobType === 'courier' && !c.licenses.courier) {
+    send(c, { type: 'job-failed', message: 'Сначала получи лицензию в Школе Курьеров!' });
+    return;
+  }
+  if (jobType === 'trash-sort' && !c.licenses.trashSort) {
+    send(c, { type: 'job-failed', message: 'Нужен сертификат сортировщика!' });
+    return;
+  }
+
+  // генерируем данные мини-игры
+  let taskData: any = {};
+  if (jobType === 'trash-sort') {
+    // 8 случайных предметов для сортировки
+    const { TRASH_SORT_ITEMS } = require('../../../shared/economy.js');
+    const shuffled = [...TRASH_SORT_ITEMS].sort(() => Math.random() - 0.5).slice(0, 8);
+    taskData = { items: shuffled, timeLimit: 25 };
+  } else if (jobType === 'courier') {
+    const districts = ['center', 'industrial', 'residential', 'business'];
+    const packages = Array.from({ length: 5 }, (_, i) => ({
+      id: i,
+      address: `${Math.floor(Math.random()*99)+1} ул. ${['Ленина','Мира','Победы','Гагарина'][Math.floor(Math.random()*4)]}`,
+      district: districts[Math.floor(Math.random()*districts.length)],
+      fragile: Math.random() > 0.7,
+    }));
+    taskData = { packages, deliveries: 3 };
+  } else if (jobType === 'lemonade') {
+    taskData = { beats: 12, bpm: 110 + Math.floor(Math.random()*30), recipe: 'classic' };
+  }
+
+  c.activeJob = { type: jobType, startedAt: Date.now(), data: taskData };
+  send(c, { type: 'job-started', jobType, taskData, skill: c.jobSkills[jobType] });
 }
 
 export function handleBuyProperty(c: Client, msg: WireMessage, ctx: EconomyContext): void {

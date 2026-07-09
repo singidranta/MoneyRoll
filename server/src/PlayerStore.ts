@@ -26,6 +26,9 @@ export class PlayerStore {
       hasSneakers: c.hasSneakers,
       hasCrown: c.hasCrown,
       properties: c.properties,
+      jobSkills: c.jobSkills,
+      licenses: c.licenses,
+      trainingCompleted: c.trainingCompleted,
     };
     this.saves.set(c.playerToken, save);
     persistPlayerSaves(this.saves);

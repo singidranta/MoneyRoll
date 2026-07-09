@@ -14,6 +14,8 @@ export type WireMessage = {
   [key: string]: unknown;
 };
 
+import type { JobSkills, JobLicense } from '../../shared/economy.js';
+
 export type Client = {
   id: string;
   ws: WebSocket;
@@ -28,6 +30,16 @@ export type Client = {
   properties: PropertyType[];
   lastJobAt: Record<JobType, number>;
   playerToken: string | null;
+  // v2 job system
+  jobSkills: JobSkills;
+  licenses: JobLicense;
+  trainingCompleted: string[];
+  activeJob?: {
+    type: JobType;
+    startedAt: number;
+    stage?: number;
+    data?: any;
+  } | null;
 };
 
 export type PeerSnapshot = {
