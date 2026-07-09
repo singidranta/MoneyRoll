@@ -53,6 +53,7 @@ export class WorldScene extends Phaser.Scene {
   private keyE!: Phaser.Input.Keyboard.Key;
   private keyI!: Phaser.Input.Keyboard.Key;
   private keyTab!: Phaser.Input.Keyboard.Key;
+  // keyQ зарезервирован для быстрого дропа в будущем
 
   // ============================================================
   //  SECTION: PLAYER STATE
@@ -71,6 +72,32 @@ export class WorldScene extends Phaser.Scene {
   private energyDrinkBuffTimer = 0.0;
   private shawarmaBuffTimer = 0.0;
   private footstepTimer = 0;
+
+  // ============================================================
+  //  SECTION: SAVE SYSTEM
+  // ============================================================
+  private readonly SAVE_KEY = 'moneyroll_save';
+  private saveAutosaveTimer = 0;
+  private readonly AUTOSAVE_INTERVAL_MS = 30000; // Автосохранение каждые 30 секунд
+
+  // ============================================================
+  //  SECTION: DRAG & DROP
+  // ============================================================
+  private dragState: {
+    active: boolean;
+    fromSlot: number;
+    item: InventoryItem | null;
+    ghostEl: HTMLDivElement | null;
+    startX: number;
+    startY: number;
+  } = { active: false, fromSlot: -1, item: null, ghostEl: null, startX: 0, startY: 0 };
+
+  // ============================================================
+  //  SECTION: PLAYER INTERACTION
+  // ============================================================
+  private nearPlayerId: string | null = null;
+  private playerInteractionMenuEl: HTMLDivElement | null = null;
+  private tradeTargetId: string | null = null;
 
   // ============================================================
   //  SECTION: NETCODE
@@ -126,6 +153,7 @@ export class WorldScene extends Phaser.Scene {
     this.keyE = kb.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.keyI = kb.addKey(Phaser.Input.Keyboard.KeyCodes.I);
     this.keyTab = kb.addKey(Phaser.Input.Keyboard.KeyCodes.TAB);
+    // keyQ зарезервирован для быстрого дропа в будущем
 
     // ---------- Background (fills entire camera — no black void past map edge) ----------
     this.groundTileSprite = this.add.tileSprite(
@@ -196,6 +224,7 @@ export class WorldScene extends Phaser.Scene {
     // ---------- Netcode ----------
     this.netcode = connectNetcode((msg) => this.handleServerMessage(msg));
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.saveGame();
       this.netcode?.close();
       this.destroyHTMLOverlays();
     });
@@ -207,10 +236,13 @@ export class WorldScene extends Phaser.Scene {
     // ---------- UI ----------
     this.createHTMLHUD();
 
+    // ---------- Load saved game ----------
+    this.loadGame();
+
     // ---------- Map data ----------
     void this.loadMapData();
 
-    console.log('[MoneyRoll] World ready. I — инвентарь, E — автомат сдачи, L — пинг.');
+    console.log('[MoneyRoll] World ready. I — инвентарь, E — автомат сдачи/игроки, L — пинг, Q — дроп предмета.');
   }
 
   // ============================================================
@@ -657,9 +689,143 @@ export class WorldScene extends Phaser.Scene {
         break;
       }
 
+      case 'steal-result': {
+        const success = msg.success as boolean;
+        const text = msg.message as string;
+        const inv = msg.inventory as (InventoryItem | null)[];
+        const weight = msg.weight as number;
+
+        if (success && inv) {
+          this.localInventory = inv;
+          this.currentWeight = weight;
+          this.updateHUDUI();
+          this.updateDashboard();
+          SoundEffects.playPopSound();
+          this.showFloatingText(text, this.player.x, this.player.y - 20, '#7cfc00');
+        } else {
+          this.showFloatingText(text, this.player.x, this.player.y - 20, '#ff3333');
+        }
+        break;
+      }
+
+      case 'give-money-result': {
+        const money = msg.money as number;
+        const text = msg.message as string;
+        this.localMoney = money;
+        this.updateHUDUI();
+        SoundEffects.playCoinSound();
+        this.showFloatingText(text, this.player.x, this.player.y - 20, '#ffd700');
+        break;
+      }
+
+      case 'player-receive-money': {
+        const money = msg.message as string;
+        this.localMoney = msg.money as number;
+        this.updateHUDUI();
+        SoundEffects.playCoinSound();
+        this.showFloatingText(money, this.player.x, this.player.y - 20, '#ffd700');
+        break;
+      }
+
+      case 'player-notice': {
+        const text = msg.message as string;
+        this.showFloatingText(`⚠️ ${text}`, this.player.x, this.player.y - 30, '#ff9900');
+        break;
+      }
+
+      case 'trade-offer': {
+        const fromId = msg.fromId as string;
+        const itemType = msg.itemType as InventoryItem;
+        this.showTradeOffer(fromId, itemType);
+        break;
+      }
+
+      case 'trade-sent': {
+        const text = msg.message as string;
+        this.showFloatingText(text, this.player.x, this.player.y - 20, '#4aa8c8');
+        break;
+      }
+
+      case 'trade-complete': {
+        const inv = msg.inventory as (InventoryItem | null)[];
+        const weight = msg.weight as number;
+        const text = msg.message as string;
+        this.localInventory = inv;
+        this.currentWeight = weight;
+        this.updateHUDUI();
+        this.updateDashboard();
+        SoundEffects.playUpgradeSound();
+        this.showFloatingText(text, this.player.x, this.player.y - 20, '#7cfc00');
+        break;
+      }
+
+      case 'trade-failed': {
+        const text = msg.message as string;
+        this.showFloatingText(text, this.player.x, this.player.y - 20, '#ff3333');
+        break;
+      }
+
+      case 'trade-declined': {
+        const text = msg.message as string;
+        this.showFloatingText(text, this.player.x, this.player.y - 20, '#ff9900');
+        break;
+      }
+
+      case 'interaction-failed': {
+        const text = msg.message as string;
+        this.showFloatingText(text, this.player.x, this.player.y - 20, '#ff3333');
+        break;
+      }
+
       default:
         console.log('[MoneyRoll] ws ←', msg);
     }
+  }
+
+  private showTradeOffer(fromId: string, itemType: InventoryItem): void {
+    // Create trade offer popup
+    const popup = document.createElement('div');
+    popup.className = 'trade-offer-popup';
+    popup.innerHTML = `
+      <div class="trade-offer-header">
+        <span>🤝 Предложение обмена</span>
+      </div>
+      <div class="trade-offer-body">
+        <p>Игрок <strong>${fromId}</strong> предлагает:</p>
+        <div class="trade-offer-item">
+          <img src="${this.getItemWebpPath(itemType)}" alt="" />
+          <span>${this.getItemName(itemType)}</span>
+        </div>
+      </div>
+      <div class="trade-offer-actions">
+        <button class="dash-btn dash-btn-primary" id="trade-accept">Принять</button>
+        <button class="dash-btn dash-btn-danger" id="trade-decline">Отклонить</button>
+      </div>
+    `;
+    document.body.appendChild(popup);
+
+    popup.querySelector('#trade-accept')?.addEventListener('click', () => {
+      this.sendGameMessage({ type: 'trade-accept', fromId, slotIndex: -1 });
+      popup.remove();
+    });
+    popup.querySelector('#trade-decline')?.addEventListener('click', () => {
+      this.sendGameMessage({ type: 'trade-decline', fromId });
+      popup.remove();
+    });
+
+    // Auto-remove after 15 seconds
+    setTimeout(() => popup.remove(), 15000);
+  }
+
+  private getItemWebpPath(item: InventoryItem): string {
+    if (item === 'bag-adidas' || item === 'backpack-tourist') {
+      return `/assets/props/flat/bags/${item}.webp`;
+    } else if (item === 'shawarma') {
+      return '/assets/props/flat/food/shawarma.webp';
+    } else if (item === 'energy') {
+      return '/assets/props/flat/food/energy-drink.webp';
+    }
+    return `/assets/props/flat/bottles/${item}.webp`;
   }
 
   // ============================================================
@@ -800,20 +966,314 @@ export class WorldScene extends Phaser.Scene {
     this.nearFoodCartEntity = activeFoodCartEntity;
     this.nearClothingShopEntity = activeClothingShopEntity;
 
+    // Player interaction detection
+    this.detectNearbyPlayer();
+
     // Show/hide interaction prompt
-    if (this.nearKioskId || this.nearFoodCartEntity || this.nearClothingShopEntity) {
+    const nearAnyShop = this.nearKioskId || this.nearFoodCartEntity || this.nearClothingShopEntity;
+    const nearPlayer = this.nearPlayerId !== null;
+
+    if (nearAnyShop || nearPlayer) {
       this.usePrompt.setPosition(targetX, targetY - PROMPT_OFFSET_Y);
       this.usePrompt.setVisible(true);
 
       if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
-        this.toggleInventory(true); // Открывает Dashboard с магазинами или автоматом!
+        if (nearPlayer && !nearAnyShop) {
+          this.showPlayerInteractionMenu();
+        } else {
+          this.toggleInventory(true); // Открывает Dashboard с магазинами или автоматом!
+        }
       }
     } else {
       this.usePrompt.setVisible(false);
-      // Inventory stays open even when walking away from shops
+      this.hidePlayerInteractionMenu();
+    }
+
+    // Autosave
+    this.saveAutosaveTimer += delta;
+    if (this.saveAutosaveTimer >= this.AUTOSAVE_INTERVAL_MS) {
+      this.saveAutosaveTimer = 0;
+      this.saveGame();
     }
 
     this.renderRemoteInterpolated(now);
+  }
+
+  // ============================================================
+  //  SECTION: SAVE SYSTEM
+  // ============================================================
+  private saveGame(): void {
+    const saveData = {
+      version: 1,
+      money: this.localMoney,
+      inventory: this.localInventory,
+      backpackTier: this.backpackTier,
+      equippedBag: this.equippedBag,
+      hasJacket: this.hasJacket,
+      hasSneakers: this.hasSneakers,
+      hasCrown: this.hasCrown,
+      x: this.player.x,
+      y: this.player.y,
+      savedAt: Date.now(),
+    };
+    try {
+      localStorage.setItem(this.SAVE_KEY, JSON.stringify(saveData));
+      console.log('[MoneyRoll] Игра сохранена');
+    } catch (e) {
+      console.warn('[MoneyRoll] Ошибка сохранения:', e);
+    }
+  }
+
+  private loadGame(): boolean {
+    try {
+      const raw = localStorage.getItem(this.SAVE_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      if (data.version !== 1) return false;
+
+      this.localMoney = data.money ?? 5.0;
+      this.localInventory = data.inventory ?? Array(INVENTORY_SLOTS).fill(null);
+      this.backpackTier = data.backpackTier ?? 1;
+      this.equippedBag = data.equippedBag ?? null;
+      this.hasJacket = data.hasJacket ?? false;
+      this.hasSneakers = data.hasSneakers ?? false;
+      this.hasCrown = data.hasCrown ?? false;
+
+      if (typeof data.x === 'number' && typeof data.y === 'number') {
+        this.player.setPosition(data.x, data.y);
+      }
+
+      // Apply visual effects
+      if (this.hasCrown) this.player.setTint(0xffd700);
+
+      console.log('[MoneyRoll] Игра загружена, сохранено:', new Date(data.savedAt).toLocaleString());
+      return true;
+    } catch (e) {
+      console.warn('[MoneyRoll] Ошибка загрузки:', e);
+      return false;
+    }
+  }
+
+  // ============================================================
+  //  SECTION: PLAYER INTERACTION (STEAL / TRADE / GIVE)
+  // ============================================================
+  private detectNearbyPlayer(): void {
+    this.nearPlayerId = null;
+    if (!this.myId) return;
+
+    let closestId: string | null = null;
+    let closestDist = INTERACT_RADIUS;
+
+    for (const [id, sprite] of this.remotePlayers.entries()) {
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, sprite.x, sprite.y);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestId = id;
+      }
+    }
+
+    if (closestId) {
+      this.nearPlayerId = closestId;
+    }
+  }
+
+  private showPlayerInteractionMenu(): void {
+    this.hidePlayerInteractionMenu();
+
+    const menu = document.createElement('div');
+    menu.id = 'player-interaction-menu';
+    menu.className = 'player-interaction-menu';
+
+    menu.innerHTML = `
+      <div class="pi-menu-header">
+        <span class="pi-menu-title">Действия с игроком</span>
+        <button class="pi-menu-close" title="Закрыть">&times;</button>
+      </div>
+      <button class="pi-action-btn" data-action="steal">
+        <span class="pi-action-icon">🥷</span>
+        <span class="pi-action-text">
+          <strong>Украсть предмет</strong>
+          <small>Шанс: 20% — если провалишься, игрок узнает!</small>
+        </span>
+      </button>
+      <button class="pi-action-btn" data-action="trade">
+        <span class="pi-action-icon">🤝</span>
+        <span class="pi-action-text">
+          <strong>Предложить обмен</strong>
+          <small>Выбери предмет из инвентаря для обмена</small>
+        </span>
+      </button>
+      <button class="pi-action-btn" data-action="give">
+        <span class="pi-action-icon">💰</span>
+        <span class="pi-action-text">
+          <strong>Дать денег</strong>
+          <small>Перевести деньги другому игроку</small>
+        </span>
+      </button>
+    `;
+
+    document.body.appendChild(menu);
+    this.playerInteractionMenuEl = menu;
+
+    // Close button
+    menu.querySelector('.pi-menu-close')?.addEventListener('click', () => {
+      this.hidePlayerInteractionMenu();
+    });
+
+    // Action buttons
+    menu.querySelectorAll('.pi-action-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const action = (e.currentTarget as HTMLElement).dataset.action;
+        if (action === 'steal') this.attemptSteal();
+        else if (action === 'trade') this.initiateTrade();
+        else if (action === 'give') this.initiateGiveMoney();
+      });
+    });
+  }
+
+  private hidePlayerInteractionMenu(): void {
+    if (this.playerInteractionMenuEl) {
+      this.playerInteractionMenuEl.remove();
+      this.playerInteractionMenuEl = null;
+    }
+  }
+
+  private attemptSteal(): void {
+    if (!this.nearPlayerId) return;
+    this.hidePlayerInteractionMenu();
+    this.sendGameMessage({ type: 'player-interaction', action: 'steal', targetId: this.nearPlayerId });
+    this.showFloatingText('Пытаемся украсть…', this.player.x, this.player.y - 30, '#ff9900');
+  }
+
+  private initiateTrade(): void {
+    if (!this.nearPlayerId) return;
+    this.hidePlayerInteractionMenu();
+    this.showFloatingText('Открой инвентарь и выбери предмет для обмена', this.player.x, this.player.y - 30, '#4aa8c8');
+    this.tradeTargetId = this.nearPlayerId;
+    this.toggleInventory(true);
+  }
+
+  private initiateGiveMoney(): void {
+    if (!this.nearPlayerId) return;
+    this.hidePlayerInteractionMenu();
+
+    const amountStr = prompt(`Сколько денег дать? (у тебя $${this.localMoney.toFixed(2)})`, '1.00');
+    if (!amountStr) return;
+    const amount = parseFloat(amountStr);
+    if (isNaN(amount) || amount <= 0 || amount > this.localMoney) {
+      this.showFloatingText('Неверная сумма!', this.player.x, this.player.y - 20, '#ff3333');
+      return;
+    }
+
+    this.sendGameMessage({ type: 'player-interaction', action: 'give-money', targetId: this.nearPlayerId, amount });
+    this.showFloatingText(`Отправлено: $${amount.toFixed(2)}`, this.player.x, this.player.y - 30, '#ffd700');
+  }
+
+  /** Вызывается когда игрок кликает по предмету в инвентаре в режиме трейда */
+  private handleTradeClick(slotIdx: number): void {
+    if (!this.tradeTargetId) return;
+    const item = this.localInventory[slotIdx];
+    if (!item) return;
+
+    this.sendGameMessage({
+      type: 'player-interaction',
+      action: 'trade-offer',
+      targetId: this.tradeTargetId,
+      slotIndex: slotIdx,
+      itemType: item,
+    });
+    this.tradeTargetId = null;
+    this.showFloatingText('Предложение обмена отправлено!', this.player.x, this.player.y - 30, '#4aa8c8');
+  }
+
+  // ============================================================
+  //  SECTION: DROP ITEMS
+  // ============================================================
+  private dropItem(slotIdx: number): void {
+    const item = this.localInventory[slotIdx];
+    if (!item) return;
+
+    // Нельзя дропнуть экипированную сумку — сначала снять
+    if ((item === 'bag-adidas' || item === 'backpack-tourist') && this.equippedBag === item) {
+      this.showFloatingText('Сначала сними сумку!', this.player.x, this.player.y - 20, '#ff9900');
+      return;
+    }
+
+    this.localInventory[slotIdx] = null;
+
+    // Считаем вес заново
+    this.currentWeight = this.calculateLocalWeight();
+
+    // Спавним бутылку/предмет на земле
+    const dropOffset = 40;
+    const dropX = this.player.x + (Math.random() - 0.5) * dropOffset;
+    const dropY = this.player.y + 20;
+    this.spawnDroppedItemOnGround(item, dropX, dropY);
+
+    SoundEffects.playPopSound();
+    this.updateHUDUI();
+    this.updateDashboard();
+    this.showFloatingText(`Выброшено: ${this.getItemName(item)}`, this.player.x, this.player.y - 30, '#ff9900');
+
+    // Сохраняем после дропа
+    this.saveGame();
+  }
+
+  private spawnDroppedItemOnGround(item: InventoryItem, x: number, y: number): void {
+    let spriteKey = '';
+    if (item === 'bag-adidas' || item === 'backpack-tourist') {
+      spriteKey = item;
+    } else if (item === 'shawarma') {
+      spriteKey = 'shawarma';
+    } else if (item === 'energy') {
+      spriteKey = 'energy-drink';
+    } else {
+      const def = BOTTLE_TYPES[item as BottleType];
+      spriteKey = def?.spriteKey ?? 'bottle-water';
+    }
+
+    const img = this.add.image(x, y, spriteKey);
+    img.setScale(0.35);
+    img.setDepth(80);
+
+    this.tweens.add({
+      targets: img,
+      y: y - 3,
+      duration: 600,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    // Добавляем возможность поднять
+    const dropId = `drop_${Math.random().toString(36).slice(2, 10)}`;
+    img.setData('dropId', dropId);
+    img.setData('dropItem', item);
+    this.bottlesMap.set(dropId, img);
+  }
+
+  private calculateLocalWeight(): number {
+    let total = 0;
+    for (const item of this.localInventory) {
+      if (!item) continue;
+      if (item === 'bag-adidas' || item === 'backpack-tourist') {
+        total += 0;
+      } else if (item === 'shawarma' || item === 'energy') {
+        total += item === 'shawarma' ? 0.5 : 0.3;
+      } else {
+        total += BOTTLE_TYPES[item as BottleType]?.weight ?? 0;
+      }
+    }
+    return parseFloat(total.toFixed(2));
+  }
+
+  private getItemName(item: InventoryItem): string {
+    if (item === 'bag-adidas') return 'Сумка Adidas';
+    if (item === 'backpack-tourist') return 'Рюкзак туриста';
+    if (item === 'shawarma') return 'Шаурма';
+    if (item === 'energy') return 'Ягуар';
+    const def = BOTTLE_TYPES[item as BottleType];
+    return def?.name ?? item;
   }
 
   private sendMoveThrottled(): void {
@@ -920,10 +1380,17 @@ export class WorldScene extends Phaser.Scene {
 
   private createKioskPanel(): HTMLDivElement {
     const panel = document.createElement('div');
-    panel.className = 'dashboard-panel kiosk';
+    panel.className = 'dashboard-panel kiosk shop-panel-large';
     panel.innerHTML = `
       <h3><img src="/assets/props/flat/kiosk/recycle-machine.webp" alt="" />Автомат сдачи</h3>
-      <p>Кликни бутылку в инвентаре справа, или сдай всё сразу.</p>
+      <p>Кликни бутылку в инвентаре справа, чтобы сдать поштучно, или используй кнопку ниже для массовой сдачи.</p>
+      <div class="kiosk-prices">
+        <div class="kiosk-price-row"><img src="/assets/props/flat/bottles/water.webp" /><span>Пластиковая вода</span><span class="kiosk-price">$0.05</span></div>
+        <div class="kiosk-price-row"><img src="/assets/props/flat/bottles/beer-glass.webp" /><span>Стекло пиво</span><span class="kiosk-price">$0.20</span></div>
+        <div class="kiosk-price-row"><img src="/assets/props/flat/bottles/wine.webp" /><span>Вино</span><span class="kiosk-price">$1.00</span></div>
+        <div class="kiosk-price-row"><img src="/assets/props/flat/bottles/champagne.webp" /><span>Шампанское</span><span class="kiosk-price">$5.00</span></div>
+        <div class="kiosk-price-row"><img src="/assets/props/flat/bottles/bordeaux-1982.webp" /><span>Bordeaux 1982</span><span class="kiosk-price">$50.00</span></div>
+      </div>
       <button id="btn-recycle-all" class="dash-btn dash-btn-primary">Сдать все бутылки</button>
       <button id="btn-close-dashboard" class="dash-btn dash-btn-danger">Закрыть</button>
     `;
@@ -938,19 +1405,28 @@ export class WorldScene extends Phaser.Scene {
 
   private createFoodPanel(): HTMLDivElement {
     const panel = document.createElement('div');
-    panel.className = 'dashboard-panel food';
+    panel.className = 'dashboard-panel food shop-panel-large';
     panel.innerHTML = `
       <h3><img src="/assets/props/flat/kiosk/food-cart.webp" alt="" />Ларёк у Ашота</h3>
-      <div class="dash-category">Еда (в инвентарь)</div>
-      <button id="btn-buy-shawa" class="dash-btn dash-btn-buy">
-        <span>Шаурма</span>
-        <span>$1.50</span>
-      </button>
-      <button id="btn-buy-energy" class="dash-btn dash-btn-buy">
-        <span>Энергетик «Ягуар»</span>
-        <span>$3.00</span>
-      </button>
       <p>Еда попадает в инвентарь. Кликни по ней, чтобы съесть.</p>
+      <div class="shop-grid">
+        <div class="shop-card" id="btn-buy-shawa">
+          <div class="shop-card-img"><img src="/assets/props/flat/food/shawarma.webp" alt="Шаурма" /></div>
+          <div class="shop-card-info">
+            <span class="shop-card-name">Шаурма</span>
+            <span class="shop-card-desc">Восстанавливает 100% энергии + бафф бега</span>
+          </div>
+          <div class="shop-card-price">$1.50</div>
+        </div>
+        <div class="shop-card" id="btn-buy-energy">
+          <div class="shop-card-img"><img src="/assets/props/flat/food/energy-drink.webp" alt="Ягуар" /></div>
+          <div class="shop-card-info">
+            <span class="shop-card-name">Энергетик «Ягуар»</span>
+            <span class="shop-card-desc">Бешеная скорость на 30 сек</span>
+          </div>
+          <div class="shop-card-price">$3.00</div>
+        </div>
+      </div>
       <button id="btn-close-dashboard" class="dash-btn dash-btn-danger">Закрыть</button>
     `;
     panel.querySelector('#btn-buy-shawa')?.addEventListener('click', () => {
@@ -967,31 +1443,55 @@ export class WorldScene extends Phaser.Scene {
 
   private createClothingPanel(): HTMLDivElement {
     const panel = document.createElement('div');
-    panel.className = 'dashboard-panel clothing';
+    panel.className = 'dashboard-panel clothing shop-panel-large';
     panel.innerHTML = `
       <h3><img src="/assets/props/flat/buildings/clothing-shop.webp" alt="" />Магазин одежды</h3>
-      <div class="dash-category">Сумки</div>
-      <button id="btn-buy-bag-adidas" class="dash-btn dash-btn-buy">
-        <span>Сумка Adidas (15 кг)</span>
-        <span>$15.00</span>
-      </button>
-      <button id="btn-buy-backpack-tourist" class="dash-btn dash-btn-buy">
-        <span>Рюкзак туриста (30 кг)</span>
-        <span>$45.00</span>
-      </button>
-      <div class="dash-category">Экипировка</div>
-      <button id="btn-buy-jacket" class="dash-btn dash-btn-buy">
-        <span>Свитшот Adidas (+реген)</span>
-        <span>$10.00</span>
-      </button>
-      <button id="btn-buy-sneakers" class="dash-btn dash-btn-buy">
-        <span>Кроссовки Nike (+скорость)</span>
-        <span>$20.00</span>
-      </button>
-      <button id="btn-buy-crown" class="dash-btn dash-btn-buy">
-        <span>Корона</span>
-        <span>$100.00</span>
-      </button>
+      <div class="shop-section-title">Сумки</div>
+      <div class="shop-grid">
+        <div class="shop-card" id="btn-buy-bag-adidas">
+          <div class="shop-card-img"><img src="/assets/props/flat/bags/bag-adidas.webp" alt="Сумка Adidas" /></div>
+          <div class="shop-card-info">
+            <span class="shop-card-name">Сумка Adidas</span>
+            <span class="shop-card-desc">До 15 кг</span>
+          </div>
+          <div class="shop-card-price">$15.00</div>
+        </div>
+        <div class="shop-card" id="btn-buy-backpack-tourist">
+          <div class="shop-card-img"><img src="/assets/props/flat/bags/backpack-tourist.webp" alt="Рюкзак туриста" /></div>
+          <div class="shop-card-info">
+            <span class="shop-card-name">Рюкзак туриста</span>
+            <span class="shop-card-desc">До 30 кг</span>
+          </div>
+          <div class="shop-card-price">$45.00</div>
+        </div>
+      </div>
+      <div class="shop-section-title">Экипировка</div>
+      <div class="shop-grid">
+        <div class="shop-card" id="btn-buy-jacket">
+          <div class="shop-card-img"><img src="/assets/props/flat/clothing/adidas-jacket.webp" alt="Свитшот Adidas" /></div>
+          <div class="shop-card-info">
+            <span class="shop-card-name">Свитшот Adidas</span>
+            <span class="shop-card-desc">+50% регенерация выносливости</span>
+          </div>
+          <div class="shop-card-price">$10.00</div>
+        </div>
+        <div class="shop-card" id="btn-buy-sneakers">
+          <div class="shop-card-img"><img src="/assets/props/flat/clothing/sneakers.webp" alt="Кроссовки Nike" /></div>
+          <div class="shop-card-info">
+            <span class="shop-card-name">Кроссовки Nike</span>
+            <span class="shop-card-desc">+30% скорость бега</span>
+          </div>
+          <div class="shop-card-price">$20.00</div>
+        </div>
+        <div class="shop-card" id="btn-buy-crown">
+          <div class="shop-card-img"><img src="/assets/props/flat/clothing/crown.webp" alt="Корона" /></div>
+          <div class="shop-card-info">
+            <span class="shop-card-name">Золотая корона</span>
+            <span class="shop-card-desc">Статус короля улиц</span>
+          </div>
+          <div class="shop-card-price">$100.00</div>
+        </div>
+      </div>
       <button id="btn-close-dashboard" class="dash-btn dash-btn-danger">Закрыть</button>
     `;
     panel.querySelector('#btn-buy-bag-adidas')?.addEventListener('click', () => {
@@ -1018,14 +1518,17 @@ export class WorldScene extends Phaser.Scene {
   private createInventoryPanel(): HTMLDivElement {
     const panel = document.createElement('div');
     panel.id = 'dashboard-inventory-panel';
-    panel.className = 'dashboard-panel';
+    panel.className = 'dashboard-panel inventory-panel-large';
     panel.innerHTML = `
       <div class="inventory-header">
         <span class="inventory-title">
           <img src="/assets/props/flat/bags/backpack-tourist.webp" alt="" />
           Рюкзак
         </span>
-        <button id="btn-close-dashboard-x" class="dash-btn-close" title="Закрыть (I)">&times;</button>
+        <div class="header-actions">
+          <button id="btn-save-game" class="dash-btn-save" title="Сохранить игру">💾</button>
+          <button id="btn-close-dashboard-x" class="dash-btn-close" title="Закрыть (I)">&times;</button>
+        </div>
       </div>
       <div class="bag-slot-row">
         <div id="equip-bag-slot" class="bag-slot empty"></div>
@@ -1034,14 +1537,18 @@ export class WorldScene extends Phaser.Scene {
           <span id="equip-bag-desc" style="color:#8a919e;">Без сумки · 4 кармана</span>
         </div>
       </div>
-      <div id="inventory-grid"></div>
+      <div id="inventory-grid" class="inventory-grid-large"></div>
       <div class="dashboard-footer">
-        <span id="inv-guide-text">Кликни предмет, чтобы использовать</span>
+        <span id="inv-guide-text">Кликни предмет · ПКМ — выбросить · Перетаскивай между слотами</span>
         <span id="inv-weight-status">Вес: 0.0 / ${BACKPACK_TIERS[1].maxWeight} кг</span>
       </div>
     `;
     panel.querySelector('#btn-close-dashboard-x')?.addEventListener('click', () => {
       this.toggleInventory(false);
+    });
+    panel.querySelector('#btn-save-game')?.addEventListener('click', () => {
+      this.saveGame();
+      this.showFloatingText('Игра сохранена!', this.player.x, this.player.y - 30, '#7cfc00');
     });
     return panel;
   }
@@ -1266,6 +1773,7 @@ export class WorldScene extends Phaser.Scene {
       const item = this.localInventory[i];
       const slot = document.createElement('div');
       slot.className = 'inv-slot';
+      slot.dataset.slotIndex = String(i);
 
       if (i >= activeSlotsCount) {
         slot.classList.add('locked');
@@ -1296,7 +1804,25 @@ export class WorldScene extends Phaser.Scene {
 
         slot.innerHTML = `<img src="${webpPath}" />${label}`;
 
+        // Drag & Drop events
+        slot.addEventListener('mousedown', (e) => {
+          if (e.button === 0) { // Left click - start drag
+            this.startDrag(e, i, item);
+          }
+        });
+
+        // Right click to drop
+        slot.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          this.dropItem(i);
+        });
+
+        // Left click to use
         slot.addEventListener('click', () => {
+          if (this.tradeTargetId) {
+            this.handleTradeClick(i);
+            return;
+          }
           if (item === 'bag-adidas' || item === 'backpack-tourist') {
             this.equipBagFromInventory(i, item as any);
           } else if (item === 'shawarma' || item === 'energy') {
@@ -1311,6 +1837,22 @@ export class WorldScene extends Phaser.Scene {
         slot.innerHTML = `<span style="font-size:11px;color:#4a5260;font-weight:600;">${i + 1}</span>`;
       }
 
+      // Drop target events
+      slot.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        slot.classList.add('drag-over');
+      });
+      slot.addEventListener('dragleave', () => {
+        slot.classList.remove('drag-over');
+      });
+      slot.addEventListener('mouseup', (e) => {
+        e.preventDefault();
+        if (this.dragState.active && this.dragState.fromSlot !== i) {
+          this.finishDrag(i);
+        }
+        this.cancelDrag();
+      });
+
       grid.appendChild(slot);
     }
 
@@ -1322,15 +1864,112 @@ export class WorldScene extends Phaser.Scene {
 
     const guideText = this.dashboardPanelEl.querySelector('#inv-guide-text') as HTMLSpanElement;
     if (guideText) {
-      guideText.textContent = this.nearKioskId
-        ? 'Кликни на бутылку, чтобы сдать!'
-        : 'Кликни на еду, чтобы использовать';
+      if (this.tradeTargetId) {
+        guideText.textContent = 'Выбери предмет для обмена с игроком';
+      } else {
+        guideText.textContent = this.nearKioskId
+          ? 'Кликни на бутылку, чтобы сдать! · ПКМ — выбросить'
+          : 'Кликни предмет · ПКМ — выбросить · Перетаскивай между слотами';
+      }
     }
+  }
+
+  // ============================================================
+  //  SECTION: DRAG & DROP IMPLEMENTATION
+  // ============================================================
+  private startDrag(e: MouseEvent, slotIdx: number, item: InventoryItem): void {
+    this.dragState = {
+      active: true,
+      fromSlot: slotIdx,
+      item,
+      ghostEl: null,
+      startX: e.clientX,
+      startY: e.clientY,
+    };
+
+    // Create ghost element
+    const ghost = document.createElement('div');
+    ghost.className = 'drag-ghost';
+    let webpPath = `/assets/props/flat/bottles/${item}.webp`;
+    if (item === 'bag-adidas' || item === 'backpack-tourist') {
+      webpPath = `/assets/props/flat/bags/${item}.webp`;
+    } else if (item === 'shawarma') {
+      webpPath = '/assets/props/flat/food/shawarma.webp';
+    } else if (item === 'energy') {
+      webpPath = '/assets/props/flat/food/energy-drink.webp';
+    }
+    ghost.innerHTML = `<img src="${webpPath}" />`;
+    ghost.style.left = `${e.clientX - 24}px`;
+    ghost.style.top = `${e.clientY - 24}px`;
+    document.body.appendChild(ghost);
+    this.dragState.ghostEl = ghost;
+
+    // Add global mousemove/mouseup listeners
+    const onMove = (ev: MouseEvent) => {
+      if (this.dragState.ghostEl) {
+        this.dragState.ghostEl.style.left = `${ev.clientX - 24}px`;
+        this.dragState.ghostEl.style.top = `${ev.clientY - 24}px`;
+      }
+      // Highlight target slot
+      const target = document.elementFromPoint(ev.clientX, ev.clientY);
+      document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+      const slot = target?.closest('.inv-slot') as HTMLElement;
+      if (slot && slot.dataset.slotIndex) {
+        const targetIdx = parseInt(slot.dataset.slotIndex);
+        if (targetIdx !== this.dragState.fromSlot && targetIdx < this.getActiveSlotsCount()) {
+          slot.classList.add('drag-over');
+        }
+      }
+    };
+
+    const onUp = (ev: MouseEvent) => {
+      // Find drop target
+      const target = document.elementFromPoint(ev.clientX, ev.clientY);
+      const slot = target?.closest('.inv-slot') as HTMLElement;
+      if (slot && slot.dataset.slotIndex) {
+        const targetIdx = parseInt(slot.dataset.slotIndex);
+        if (targetIdx !== this.dragState.fromSlot && targetIdx < this.getActiveSlotsCount()) {
+          this.finishDrag(targetIdx);
+        }
+      }
+      this.cancelDrag();
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  private finishDrag(toSlot: number): void {
+    const fromSlot = this.dragState.fromSlot;
+    if (fromSlot === toSlot) return;
+
+    // Swap items
+    const temp = this.localInventory[fromSlot];
+    this.localInventory[fromSlot] = this.localInventory[toSlot];
+    this.localInventory[toSlot] = temp;
+
+    this.currentWeight = this.calculateLocalWeight();
+    this.updateHUDUI();
+    this.updateDashboard();
+  }
+
+  private cancelDrag(): void {
+    if (this.dragState.ghostEl) {
+      this.dragState.ghostEl.remove();
+    }
+    document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    this.dragState = { active: false, fromSlot: -1, item: null, ghostEl: null, startX: 0, startY: 0 };
   }
 
   private destroyHTMLOverlays(): void {
     this.removeHTMLHUD();
     this.removeDashboardPanel();
+    this.hidePlayerInteractionMenu();
+
+    // Remove any trade offer popups
+    document.querySelectorAll('.trade-offer-popup').forEach(el => el.remove());
 
     const pulseStyle = document.getElementById('hud-pulse-style');
     if (pulseStyle) pulseStyle.remove();
