@@ -52,6 +52,11 @@ export const MAP_ENTITY_TYPES = [
   // Поддержка короткого имени из ранней серверной реализации.
   'job-trash',
   'property',
+  // v2 новые
+  'school',
+  'courier-hub',
+  'trash-sort-station',
+  'lemonade-stand',
 ] as const;
 
 export type MapEntityType = (typeof MAP_ENTITY_TYPES)[number];

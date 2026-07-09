@@ -244,13 +244,18 @@ export class EditorScene extends Phaser.Scene {
       case 'apartment-1':
       case 'apartment-2':
       case 'wall':
+      case 'school':
+      case 'courier-hub':
+      case 'trash-sort-station':
+      case 'lemonade-stand':
         this.renderImageEntity(
           key,
           entity,
           px,
           py,
+          // @ts-ignore new sprites
           entity.type,
-          entity.type === 'kiosk' ? 1.1 : 1.0,
+          entity.type === 'kiosk' ? 1.1 : 0.9,
         );
         break;
       case 'spawner':
@@ -263,14 +268,17 @@ export class EditorScene extends Phaser.Scene {
         this.renderBuilding(key, entity, px, py);
         break;
       case 'job-courier':
-        this.renderActionMarker(key, px, py, '🚲', 'РАБОТА: КУРЬЕР', '$2.50–4.00', 0x3b82f6);
+      case 'courier-hub':
+        this.renderActionMarker(key, px, py, '🚲', 'РАБОТА: КУРЬЕР PRO', '$8–22', 0x3b82f6);
         break;
       case 'job-lemonade':
-        this.renderActionMarker(key, px, py, '🍋', 'РАБОТА: ЛИМОНАД', '$1.50–2.50', 0xfacc15);
+      case 'lemonade-stand':
+        this.renderActionMarker(key, px, py, '🍋', 'РАБОТА: ЛИМОНАД', '$4.5–9.5', 0xfacc15);
         break;
       case 'job-trash-sort':
       case 'job-trash':
-        this.renderActionMarker(key, px, py, '♻', 'РАБОТА: СОРТИРОВКА', '$1.00–2.00', 0x22c55e);
+      case 'trash-sort-station':
+        this.renderActionMarker(key, px, py, '♻', 'СОРТИРОВКА', '$5–14', 0x22c55e);
         break;
       case 'property': {
         const property = PROPERTIES[entity.properties.propertyType ?? 'shack'];
@@ -715,16 +723,20 @@ export class EditorScene extends Phaser.Scene {
             <option value="spawner">Bottle Spawner (Спавнер)</option>
             <option value="food-cart">Ларёк с Шаурмой (Магазин)</option>
             <option value="clothing-shop">Магазин одежды (Гардероб)</option>
+            <option value="school">🎓 Школа Курьеров</option>
             <option value="apartment-1">Кирпичный дом (Декор)</option>
             <option value="apartment-2">Панельный дом (Декор)</option>
             <option value="wall">Забор/Стена (Препятствие)</option>
             <option value="building">Здание (Декор)</option>
             <option value="npc">NPC-Житель</option>
           </optgroup>
-          <optgroup label="Работы">
-            <option value="job-courier">🚲 Работа: курьер</option>
-            <option value="job-lemonade">🍋 Работа: продажа лимонада</option>
-            <option value="job-trash-sort">♻ Работа: сортировка мусора</option>
+          <optgroup label="Работы v2">
+            <option value="job-courier">🚲 Курьер PRO</option>
+            <option value="courier-hub">📦 Курьер-Хаб (сортировка)</option>
+            <option value="job-trash-sort">♻ Сортировка мусора</option>
+            <option value="trash-sort-station">🗑️ Станция сортировки</option>
+            <option value="job-lemonade">🍋 Лимонад-точка</option>
+            <option value="lemonade-stand">🍋 Лимонад-стенд бизнес</option>
           </optgroup>
           <optgroup label="Инвестиции">
             <option value="property">⌂ Точка покупки недвижимости</option>
@@ -737,6 +749,7 @@ export class EditorScene extends Phaser.Scene {
             <option value="shack">Сарай с бомжами — $120 · +$3/мин</option>
             <option value="apartment-small">Хрущёвка — $450 · +$12/мин</option>
             <option value="apartment-big">Пентхаус — $1500 · +$45/мин</option>
+            <option value="lemonade-stand">🍋 Лимонад-стенд — $320 · +$8.5/мин</option>
           </select>
           <div id="editor-property-info" style="color:#d8b4fe; font-size:11px; line-height:1.35; margin-top:6px;"></div>
         </div>

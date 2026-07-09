@@ -6,10 +6,14 @@ import {
   BOTTLE_TYPES,
   INVENTORY_SLOTS,
   PROPERTIES,
+  DEFAULT_JOB_SKILLS,
+  DEFAULT_LICENSES,
   type InventoryItem,
   type JobType,
   type PropertyType,
   type ServerBottle,
+  type JobSkills,
+  type JobLicense,
 } from '../../../shared/economy';
 import {
   bagToTier,
@@ -58,6 +62,7 @@ import { DashboardUI, type DashboardCallbacks, type DashboardContext } from '../
 import { DragDropController } from '../ui/DragDrop';
 import { showFloatingText } from '../ui/FloatingText';
 import { HudUI } from '../ui/HudUI';
+import { JobMinigameUI } from '../ui/JobMinigameUI';
 import {
   PlayerInteractionUI,
   removeAllTradePopups,
@@ -125,6 +130,11 @@ export class WorldScene extends Phaser.Scene {
   private hasAuthenticated = false;
   private isInventoryOpen = false;
   private usePrompt!: Phaser.GameObjects.Text;
+  // v2 job system
+  private jobSkills: JobSkills = JSON.parse(JSON.stringify(DEFAULT_JOB_SKILLS));
+  private licenses: JobLicense = JSON.parse(JSON.stringify(DEFAULT_LICENSES));
+  private trainingCompleted: string[] = [];
+  private nearSchoolEntity: MapEntity | null = null;
 
   // ============================================================
   //  SECTION: UI
@@ -133,6 +143,7 @@ export class WorldScene extends Phaser.Scene {
   private dashboard = new DashboardUI();
   private playerMenu = new PlayerInteractionUI();
   private dragDrop = new DragDropController();
+  private jobUI = new JobMinigameUI();
 
   constructor() {
     super({ key: 'World' });
@@ -298,6 +309,10 @@ export class WorldScene extends Phaser.Scene {
                 typeof property === 'string' && property in PROPERTIES,
             )
           : [];
+        // v2
+        if (msg.jobSkills) this.jobSkills = msg.jobSkills as JobSkills;
+        if (msg.licenses) this.licenses = msg.licenses as JobLicense;
+        if (Array.isArray(msg.trainingCompleted)) this.trainingCompleted = msg.trainingCompleted as string[];
         this.currentWeight = calculateInventoryWeight(this.localInventory);
         this.refreshUI();
 
@@ -431,14 +446,41 @@ export class WorldScene extends Phaser.Scene {
 
       case 'job-success': {
         if (typeof msg.money === 'number') this.localMoney = msg.money;
+        // update skill if provided
+        if (msg.skill && msg.jobType) {
+          const jt = msg.jobType as JobType;
+          (this.jobSkills as any)[jt] = msg.skill;
+        }
         this.updateHud();
         SoundEffects.playCoinSound();
         this.float(msg.message as string, this.player.x, this.player.y - 30, '#7cfc00');
+        if (msg.leveledUp) {
+          this.cameras.main.flash(200, 120, 255, 120);
+          SoundEffects.playUpgradeSound();
+        }
         break;
       }
 
       case 'job-failed':
         this.float(msg.message as string, this.player.x, this.player.y - 20, '#ff9900');
+        break;
+
+      case 'job-started':
+        this.float(`Старт: ${msg.jobType}`, this.player.x, this.player.y - 25, '#4aa8ff');
+        break;
+
+      case 'training-success': {
+        if (typeof msg.money === 'number') this.localMoney = msg.money;
+        if (msg.jobSkills) this.jobSkills = msg.jobSkills as JobSkills;
+        if (msg.licenses) this.licenses = msg.licenses as JobLicense;
+        if (Array.isArray(msg.trainingCompleted)) this.trainingCompleted = msg.trainingCompleted as string[];
+        this.updateHud();
+        SoundEffects.playUpgradeSound();
+        this.float(msg.message as string, this.player.x, this.player.y - 35, '#7cfc00');
+        break;
+      }
+      case 'training-failed':
+        this.float(msg.message as string, this.player.x, this.player.y - 20, '#ff5555');
         break;
 
       case 'property-success': {
@@ -815,7 +857,45 @@ export class WorldScene extends Phaser.Scene {
     if (!this.nearJobEntity) return;
     const jobType = this.jobTypeForEntity(this.nearJobEntity);
     if (!jobType) return;
-    this.sendGameMessage({ type: 'job-complete', jobType });
+
+    // Проверка лицензий
+    if (jobType === 'courier' && !this.licenses.courier) {
+      this.float('Нужна лицензия! Иди в Школу курьеров 🎓', this.player.x, this.player.y - 30, '#ff9900');
+      this.openSchool();
+      return;
+    }
+    if (jobType === 'trash-sort' && !this.licenses.trashSort) {
+      this.float('Нужен сертификат сортировщика! Школа экологии', this.player.x, this.player.y - 30, '#ff9900');
+      this.openSchool();
+      return;
+    }
+
+    // Запуск реальной мини-игры
+    const finish = (score: number) => {
+      this.sendGameMessage({ type: 'job-submit', jobType, score });
+    };
+    if (jobType === 'trash-sort') {
+      this.jobUI.showTrashSort(finish, ()=>{});
+    } else if (jobType === 'courier') {
+      this.jobUI.showCourier(finish, ()=>{});
+    } else if (jobType === 'lemonade') {
+      this.jobUI.showLemonade(finish, ()=>{});
+    }
+  }
+
+  private openSchool(): void {
+    this.jobUI.showSchool(
+      this.localMoney,
+      this.jobSkills,
+      this.licenses,
+      this.trainingCompleted,
+      (courseId) => {
+        this.sendGameMessage({ type: 'training-buy', courseId });
+        this.jobUI.destroy();
+        setTimeout(()=>this.openSchool(), 600);
+      },
+      ()=>{}
+    );
   }
 
   private buyNearbyProperty(): void {

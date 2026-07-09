@@ -72,6 +72,25 @@ export class MapRenderer {
         case 'clothing-shop':
           this.renderClothingShop(entity, px, py);
           break;
+        case 'school':
+          this.renderBuildingSprite(entity, px, py, 'school', 1.0);
+          break;
+        case 'courier-hub':
+        case 'job-courier':
+          this.renderBuildingSprite(entity, px, py, 'courier-hub', 0.9);
+          this.renderActionMarker(px, py - 70, '🚲', 'КУРЬЕР PRO', '$8–22', 0x3b82f6);
+          break;
+        case 'trash-sort-station':
+        case 'job-trash-sort':
+        case 'job-trash':
+          this.renderBuildingSprite(entity, px, py, 'trash-sort-station', 0.9);
+          this.renderActionMarker(px, py - 70, '♻', 'СОРТИРОВКА', '$5–14', 0x22c55e);
+          break;
+        case 'lemonade-stand':
+        case 'job-lemonade':
+          this.renderBuildingSprite(entity, px, py, 'lemonade-stand', 0.9);
+          this.renderActionMarker(px, py - 70, '🍋', 'ЛИМОНАД', '$4.5–9.5', 0xfacc15);
+          break;
         case 'apartment-1':
         case 'apartment-2':
         case 'wall':
@@ -80,16 +99,6 @@ export class MapRenderer {
           break;
         case 'npc':
           this.renderNpc(entity, px, py);
-          break;
-        case 'job-courier':
-          this.renderActionMarker(px, py, '🚲', 'КУРЬЕР', '$2.50–4.00', 0x3b82f6);
-          break;
-        case 'job-lemonade':
-          this.renderActionMarker(px, py, '🍋', 'ЛИМОНАД', '$1.50–2.50', 0xfacc15);
-          break;
-        case 'job-trash-sort':
-        case 'job-trash':
-          this.renderActionMarker(px, py, '♻', 'СОРТИРОВКА', '$1.00–2.00', 0x22c55e);
           break;
         case 'property': {
           const property = PROPERTIES[entity.properties.propertyType ?? 'shack'];
@@ -212,6 +221,24 @@ export class MapRenderer {
 
     container.add([body, label]);
     this.npcSprites.push(container);
+  }
+
+  private renderBuildingSprite(entity: MapEntity, px: number, py: number, spriteKey: string, scale = 1.0): void {
+    if (!this.scene.textures.exists(spriteKey)) return;
+    const img = this.scene.add.image(px, py, spriteKey);
+    img.setScale(scale);
+    img.setDepth(95);
+    img.setAngle(entity.rotation);
+    this.npcSprites.push(img);
+
+    // collision
+    if (this.obstaclesGroup) {
+      const obs = this.scene.physics.add.staticImage(px, py, spriteKey);
+      obs.setScale(scale * 0.9);
+      obs.setVisible(false);
+      obs.refreshBody();
+      this.obstaclesGroup.add(obs);
+    }
   }
 
   destroy(): void {
