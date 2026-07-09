@@ -127,6 +127,7 @@ export const SHOP_PRICES: Record<ShopItemType, number> = {
   wine: 0,
   champagne: 0,
   'bordeaux-1982': 0,
+  parcel: 0,
 };
 
 // ============================================================
