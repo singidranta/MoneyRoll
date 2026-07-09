@@ -465,9 +465,220 @@ export class World {
         break;
       }
 
+      case 'player-interaction': {
+        const action = msg.action as string;
+        const targetId = msg.targetId as string;
+        const target = this.clients.get(targetId);
+
+        if (!target) {
+          c.ws.send(JSON.stringify({
+            type: 'interaction-failed',
+            message: 'Игрок не найден!'
+          }));
+          return;
+        }
+
+        // Check distance
+        const dist = Math.hypot(c.x - target.x, c.y - target.y);
+        if (dist > 180) {
+          c.ws.send(JSON.stringify({
+            type: 'interaction-failed',
+            message: 'Слишком далеко от игрока!'
+          }));
+          return;
+        }
+
+        if (action === 'steal') {
+          // 20% chance to steal
+          const success = Math.random() < 0.20;
+          if (success) {
+            // Find a stealable item from target
+            const stealableSlots: number[] = [];
+            for (let i = 0; i < INVENTORY_SLOTS; i++) {
+              const item = target.inventory[i];
+              if (item && item !== 'bag-adidas' && item !== 'backpack-tourist') {
+                stealableSlots.push(i);
+              }
+            }
+
+            if (stealableSlots.length === 0) {
+              c.ws.send(JSON.stringify({
+                type: 'steal-result',
+                success: false,
+                message: 'У игрока нет ничего ценного для кражи!'
+              }));
+              // Notify target anyway
+              target.ws.send(JSON.stringify({
+                type: 'player-notice',
+                message: `${c.id} пытался тебя обокрасть, но не нашел ничего!`
+              }));
+              return;
+            }
+
+            const stealIdx = stealableSlots[Math.floor(Math.random() * stealableSlots.length)];
+            const stolenItem = target.inventory[stealIdx];
+
+            // Find free slot for thief
+            const freeSlot = c.inventory.indexOf(null);
+            if (freeSlot === -1) {
+              c.ws.send(JSON.stringify({
+                type: 'steal-result',
+                success: false,
+                message: 'Инвентарь полон — не унести добычу!'
+              }));
+              return;
+            }
+
+            // Transfer item
+            target.inventory[stealIdx] = null;
+            c.inventory[freeSlot] = stolenItem;
+
+            const itemName = this.getItemName(stolenItem!);
+
+            c.ws.send(JSON.stringify({
+              type: 'steal-result',
+              success: true,
+              item: stolenItem,
+              inventory: c.inventory,
+              weight: this.calculateWeight(c.inventory),
+              message: `Украдено: ${itemName}!`
+            }));
+
+            target.ws.send(JSON.stringify({
+              type: 'player-notice',
+              message: `Тебя обокрали! Украли: ${itemName}`
+            }));
+          } else {
+            // Failed steal - notify both
+            c.ws.send(JSON.stringify({
+              type: 'steal-result',
+              success: false,
+              message: 'Кража провалена! Игрок заметил тебя!'
+            }));
+
+            target.ws.send(JSON.stringify({
+              type: 'player-notice',
+              message: `${c.id} пытался тебя обокрасть, но ты заметил!`
+            }));
+          }
+        } else if (action === 'give-money') {
+          const amount = msg.amount as number;
+          if (typeof amount !== 'number' || amount <= 0 || amount > c.money) {
+            c.ws.send(JSON.stringify({
+              type: 'interaction-failed',
+              message: 'Неверная сумма!'
+            }));
+            return;
+          }
+
+          c.money -= amount;
+          target.money += amount;
+
+          c.ws.send(JSON.stringify({
+            type: 'give-money-result',
+            success: true,
+            money: c.money,
+            message: `Переведено: $${amount.toFixed(2)} игроку`
+          }));
+
+          target.ws.send(JSON.stringify({
+            type: 'player-receive-money',
+            amount,
+            fromId: c.id,
+            money: target.money,
+            message: `Тебано переведено: $${amount.toFixed(2)}!`
+          }));
+        } else if (action === 'trade-offer') {
+          const slotIdx = msg.slotIndex as number;
+          const itemType = msg.itemType as InventoryItem;
+
+          if (typeof slotIdx !== 'number' || !c.inventory[slotIdx]) {
+            c.ws.send(JSON.stringify({
+              type: 'interaction-failed',
+              message: 'Неверный предмет для обмена!'
+            }));
+            return;
+          }
+
+          // Send trade offer to target
+          target.ws.send(JSON.stringify({
+            type: 'trade-offer',
+            fromId: c.id,
+            itemType,
+            slotIndex: slotIdx,
+            message: `${c.id} предлагает обмен: ${this.getItemName(itemType)}`
+          }));
+
+          c.ws.send(JSON.stringify({
+            type: 'trade-sent',
+            message: 'Предложение обмена отправлено!'
+          }));
+        }
+        break;
+      }
+
+      case 'trade-accept': {
+        const fromId = msg.fromId as string;
+        const fromClient = this.clients.get(fromId);
+        if (!fromClient) return;
+
+        // Transfer item from sender to accepter
+        const slotIdx = msg.slotIndex as number;
+        const item = fromClient.inventory[slotIdx];
+        if (!item) return;
+
+        const freeSlot = c.inventory.indexOf(null);
+        if (freeSlot === -1) {
+          c.ws.send(JSON.stringify({
+            type: 'trade-failed',
+            message: 'Инвентарь полон!'
+          }));
+          return;
+        }
+
+        fromClient.inventory[slotIdx] = null;
+        c.inventory[freeSlot] = item;
+
+        c.ws.send(JSON.stringify({
+          type: 'trade-complete',
+          inventory: c.inventory,
+          weight: this.calculateWeight(c.inventory),
+          message: `Получено: ${this.getItemName(item)}`
+        }));
+
+        fromClient.ws.send(JSON.stringify({
+          type: 'trade-complete',
+          inventory: fromClient.inventory,
+          weight: this.calculateWeight(fromClient.inventory),
+          message: `Обмен завершен! Отдано: ${this.getItemName(item)}`
+        }));
+        break;
+      }
+
+      case 'trade-decline': {
+        const fromId = msg.fromId as string;
+        const fromClient = this.clients.get(fromId);
+        if (!fromClient) return;
+
+        fromClient.ws.send(JSON.stringify({
+          type: 'trade-declined',
+          message: 'Обмен отклонен!'
+        }));
+        break;
+      }
+
       default:
         console.log(`[MoneyRoll][server] unknown msg type: ${msg.type}`);
     }
+  }
+
+  private getItemName(item: InventoryItem): string {
+    if (item === 'bag-adidas') return 'Сумка Adidas';
+    if (item === 'backpack-tourist') return 'Рюкзак туриста';
+    if (item === 'shawarma') return 'Шаурма';
+    if (item === 'energy') return 'Ягуар';
+    const def = BOTTLE_TYPES[item as BottleType];
+    return def?.name ?? item;
   }
 
   // ============================================================

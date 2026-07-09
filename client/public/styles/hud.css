@@ -497,6 +497,407 @@
   border-radius: 3px;
 }
 
+/* ============================================================
+   SHOP PANEL — LARGE STYLE WITH SCROLLABLE GRID
+   ============================================================ */
+.shop-panel-large {
+  min-width: 380px;
+  max-width: 440px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.shop-section-title {
+  margin: 12px 0 8px;
+  color: var(--mr-text-dim);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shop-section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--mr-line);
+}
+
+.shop-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.shop-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  background: var(--mr-panel-2);
+  border: 2px solid var(--mr-line);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.shop-card:hover {
+  border-color: #5a5040;
+  background: #2a3140;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 0 #0a0c10;
+}
+
+.shop-card:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.shop-card-img {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0d1015;
+  border-radius: 6px;
+  border: 1px solid var(--mr-line);
+}
+
+.shop-card-img img {
+  max-width: 44px;
+  max-height: 44px;
+  object-fit: contain;
+}
+
+.shop-card-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shop-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mr-text);
+}
+
+.shop-card-desc {
+  font-size: 11px;
+  color: var(--mr-text-dim);
+}
+
+.shop-card-price {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--mr-gold);
+  background: #2a2410;
+  border: 1px solid #4a4030;
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+/* Kiosk prices list */
+.kiosk-prices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 10px;
+  background: var(--mr-panel-2);
+  border-radius: 6px;
+  border: 1px solid var(--mr-line);
+}
+
+.kiosk-price-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.kiosk-price-row img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.kiosk-price-row span:nth-child(2) {
+  flex: 1;
+  color: var(--mr-text);
+}
+
+.kiosk-price {
+  font-weight: 700;
+  color: var(--mr-gold) !important;
+}
+
+/* ============================================================
+   INVENTORY PANEL — LARGE STYLE
+   ============================================================ */
+.inventory-panel-large {
+  width: 480px !important;
+  max-width: 480px !important;
+}
+
+.inventory-grid-large {
+  grid-template-columns: repeat(4, 100px) !important;
+  grid-template-rows: repeat(3, 100px) !important;
+  gap: 10px !important;
+}
+
+.inventory-grid-large .inv-slot {
+  width: 100px !important;
+  height: 100px !important;
+}
+
+.inventory-grid-large .inv-slot img {
+  max-width: 64px !important;
+  max-height: 68px !important;
+}
+
+.inventory-grid-large .inv-slot.drag-over {
+  border-color: var(--mr-cyan) !important;
+  background: #152530 !important;
+  box-shadow: 0 0 12px rgba(74, 168, 200, 0.4);
+}
+
+.header-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.dash-btn-save {
+  background: transparent;
+  border: 1px solid var(--mr-line);
+  border-radius: 4px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s ease;
+}
+
+.dash-btn-save:hover {
+  border-color: var(--mr-green);
+  background: #152018;
+}
+
+/* ============================================================
+   DRAG GHOST
+   ============================================================ */
+.drag-ghost {
+  position: fixed;
+  width: 48px;
+  height: 48px;
+  pointer-events: none;
+  z-index: 999999;
+  opacity: 0.85;
+  background: var(--mr-panel);
+  border: 2px solid var(--mr-cyan);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  transition: transform 0.05s ease;
+  transform: scale(1.1);
+}
+
+.drag-ghost img {
+  max-width: 36px;
+  max-height: 36px;
+  object-fit: contain;
+}
+
+/* ============================================================
+   PLAYER INTERACTION MENU
+   ============================================================ */
+.player-interaction-menu {
+  position: fixed;
+  left: 50%;
+  top: 60%;
+  transform: translateX(-50%);
+  background: var(--mr-panel);
+  border: 2px solid var(--mr-line);
+  border-radius: 10px;
+  padding: 6px;
+  z-index: 99999;
+  pointer-events: auto;
+  box-shadow: 0 6px 0 #0a0c10;
+  min-width: 320px;
+  animation: pi-menu-in 0.15s ease;
+}
+
+@keyframes pi-menu-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.pi-menu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--mr-line);
+  margin-bottom: 6px;
+}
+
+.pi-menu-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mr-text);
+}
+
+.pi-menu-close {
+  background: transparent;
+  border: 1px solid var(--mr-line);
+  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mr-text-dim);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.pi-menu-close:hover {
+  color: var(--mr-red);
+  border-color: #5a3030;
+}
+
+.pi-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  background: var(--mr-panel-2);
+  border: 2px solid var(--mr-line);
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 6px;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.pi-action-btn:last-child {
+  margin-bottom: 0;
+}
+
+.pi-action-btn:hover {
+  border-color: #4a5568;
+  background: #2a3140;
+  transform: translateX(2px);
+}
+
+.pi-action-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.pi-action-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pi-action-text strong {
+  font-size: 13px;
+  color: var(--mr-text);
+}
+
+.pi-action-text small {
+  font-size: 11px;
+  color: var(--mr-text-dim);
+}
+
+/* ============================================================
+   TRADE OFFER POPUP
+   ============================================================ */
+.trade-offer-popup {
+  position: fixed;
+  right: 20px;
+  bottom: 100px;
+  background: var(--mr-panel);
+  border: 2px solid #2a3a45;
+  border-radius: 10px;
+  padding: 14px;
+  z-index: 99999;
+  pointer-events: auto;
+  box-shadow: 0 4px 0 #0a0c10;
+  min-width: 280px;
+  animation: trade-popup-in 0.2s ease;
+}
+
+@keyframes trade-popup-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.trade-offer-header {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mr-cyan);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--mr-line);
+}
+
+.trade-offer-body p {
+  font-size: 12px;
+  color: var(--mr-text-dim);
+  margin: 0 0 8px;
+}
+
+.trade-offer-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  background: var(--mr-panel-2);
+  border-radius: 6px;
+  border: 1px solid var(--mr-line);
+}
+
+.trade-offer-item img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.trade-offer-item span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mr-text);
+}
+
+.trade-offer-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.trade-offer-actions .dash-btn {
+  flex: 1;
+  margin-bottom: 0;
+}
+
 @media (max-width: 900px) {
   #game-dashboard-container {
     flex-direction: column;
@@ -505,9 +906,20 @@
     overflow-y: auto;
   }
   #dashboard-inventory-panel {
-    width: min(420px, 94vw);
+    width: min(480px, 94vw);
+  }
+  .inventory-grid-large {
+    grid-template-columns: repeat(4, minmax(80px, 100px)) !important;
+    grid-template-rows: repeat(3, minmax(80px, 100px)) !important;
   }
   #hud-stats-panel {
     width: 210px;
+  }
+  .shop-panel-large {
+    min-width: min(380px, 90vw);
+    max-width: min(440px, 90vw);
+  }
+  .player-interaction-menu {
+    min-width: min(320px, 90vw);
   }
 }
