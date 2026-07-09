@@ -845,18 +845,18 @@ export class WorldScene extends Phaser.Scene {
     // 1. Balance panel (top-right)
     const moneyPanel = document.createElement('div');
     moneyPanel.id = 'hud-money-panel';
-    moneyPanel.innerHTML = `<img src="/assets/icons/coin.webp" alt="" style="width:30px;height:30px;filter:drop-shadow(0 0 8px rgba(255,199,44,0.6));" /> $<span id="hud-money-val">5.00</span>`;
+    moneyPanel.innerHTML = `$<span id="hud-money-val">5.00</span>`;
     hud.appendChild(moneyPanel);
 
     // 2. Weight & stamina panel (bottom-left)
     const statsPanel = document.createElement('div');
     statsPanel.id = 'hud-stats-panel';
     statsPanel.innerHTML = `
-      <div id="hud-weight" style="display:flex;align-items:center;gap:6px;">🎒 Пакет (0.0 / 8.0 кг)</div>
+      <div id="hud-weight" style="display:flex;align-items:center;gap:6px;"><img src="/assets/props/flat/bags/bag-adidas.webp" style="width:22px;height:22px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));vertical-align:middle;" /> Пакет (0.0 / 8.0 кг)</div>
       <div class="hud-bar">
         <div id="hud-weight-bar" class="hud-bar-fill" style="width:0%; background:#3ae06f; color:#3ae06f;"></div>
       </div>
-      <div style="font-size:11px; color:#8b93a3; margin-bottom:2px; font-weight:600; letter-spacing:1px; text-transform:uppercase;">⚡ Энергия <span style="opacity:0.6;">(Shift — спринт)</span></div>
+      <div style="font-size:11px; color:#8b93a3; margin-bottom:2px; font-weight:600; letter-spacing:1px; text-transform:uppercase;"><svg width="12" height="12" viewBox="0 0 24 24" style="vertical-align:middle;margin-right:3px;fill:#ffc72c;filter:drop-shadow(0 0 3px rgba(255,199,44,0.6));"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg>Энергия <span style="opacity:0.6;">(Shift — спринт)</span></div>
       <div class="hud-bar" style="margin-bottom:2px;">
         <div id="hud-stamina-bar" class="hud-bar-fill" style="width:100%; background:#ffc72c; color:#ffc72c;"></div>
       </div>
@@ -866,7 +866,7 @@ export class WorldScene extends Phaser.Scene {
     // 3. Backpack toggle button (bottom-right)
     const btnBackpack = document.createElement('button');
     btnBackpack.id = 'btn-toggle-backpack';
-    btnBackpack.innerHTML = '🎒';
+    btnBackpack.innerHTML = '<img src="/assets/props/flat/bags/backpack-tourist.webp" style="width:32px;height:32px;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.6));" />';
     btnBackpack.addEventListener('click', () => this.toggleInventory());
     hud.appendChild(btnBackpack);
   }
@@ -914,11 +914,11 @@ export class WorldScene extends Phaser.Scene {
     const panel = document.createElement('div');
     panel.className = 'dashboard-panel kiosk';
     panel.innerHTML = `
-      <h3>🏪 АВТОМАТ СДАЧИ</h3>
+      <h3><img src="/assets/props/flat/kiosk/recycle-machine.webp" style="width:28px;height:28px;vertical-align:middle;margin-right:6px;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));" />АВТОМАТ СДАЧИ</h3>
       <p style="font-size:13px; color:#8b93a3; line-height:1.55; margin:0 0 16px; text-align:center;">
         Сдавай стеклотару. Кликни по бутылке в инвентаре справа для поштучной сдачи или сдай всё сразу:
       </p>
-      <button id="btn-recycle-all" class="dash-btn dash-btn-primary">♻️ СДАТЬ ВСЕ БУТЫЛКИ</button>
+      <button id="btn-recycle-all" class="dash-btn dash-btn-primary"><img src="/assets/props/flat/kiosk/recycle-machine.webp" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />СДАТЬ ВСЕ БУТЫЛКИ</button>
       <button id="btn-close-dashboard" class="dash-btn dash-btn-danger">Закрыть</button>
     `;
     panel.querySelector('#btn-recycle-all')?.addEventListener('click', () => {
@@ -934,14 +934,14 @@ export class WorldScene extends Phaser.Scene {
     const panel = document.createElement('div');
     panel.className = 'dashboard-panel food';
     panel.innerHTML = `
-      <h3>🌯 ЛАРЁК У АШОТА</h3>
-      <div class="dash-category">🍕 ПИТАНИЕ (в инвентарь)</div>
+      <h3><img src="/assets/props/flat/kiosk/food-cart.webp" style="width:28px;height:28px;vertical-align:middle;margin-right:6px;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));" />ЛАРЁК У АШОТА</h3>
+      <div class="dash-category"><img src="/assets/props/flat/food/shawarma.webp" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />ПИТАНИЕ (в инвентарь)</div>
       <button id="btn-buy-shawa" class="dash-btn dash-btn-buy">
-        <span>🌯 Сытная Шаурма</span>
+        <span><img src="/assets/props/flat/food/shawarma.webp" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />Сытная Шаурма</span>
         <span>$1.50</span>
       </button>
       <button id="btn-buy-energy" class="dash-btn dash-btn-buy">
-        <span>⚡ Энергетик "Ягуар"</span>
+        <span><img src="/assets/props/flat/food/energy-drink.webp" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />Энергетик "Ягуар"</span>
         <span>$3.00</span>
       </button>
       <p style="font-size:11px; color:#8b93a3; line-height:1.5; margin:10px 0; text-align:center;">
@@ -965,27 +965,27 @@ export class WorldScene extends Phaser.Scene {
     const panel = document.createElement('div');
     panel.className = 'dashboard-panel clothing';
     panel.innerHTML = `
-      <h3>👕 МАГАЗИН ОДЕЖДЫ</h3>
-      <div class="dash-category">👜 СУМКИ</div>
+      <h3><img src="/assets/props/flat/buildings/clothing-shop.webp" style="width:28px;height:28px;vertical-align:middle;margin-right:6px;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));" />МАГАЗИН ОДЕЖДЫ</h3>
+      <div class="dash-category"><img src="/assets/props/flat/bags/bag-adidas.webp" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />СУМКИ</div>
       <button id="btn-buy-bag-adidas" class="dash-btn dash-btn-buy">
-        <span>👜 Сумка Adidas (15кг)</span>
+        <span><img src="/assets/props/flat/bags/bag-adidas.webp" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />Сумка Adidas (15кг)</span>
         <span>$15.00</span>
       </button>
       <button id="btn-buy-backpack-tourist" class="dash-btn dash-btn-buy">
-        <span>🎒 Рюкзак туриста (30кг)</span>
+        <span><img src="/assets/props/flat/bags/backpack-tourist.webp" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />Рюкзак туриста (30кг)</span>
         <span>$45.00</span>
       </button>
-      <div class="dash-category" style="margin-top:12px;">👕 ЭКИПИРОВКА</div>
+      <div class="dash-category" style="margin-top:12px;"><img src="/assets/props/flat/clothing/adidas-jacket.webp" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />ЭКИПИРОВКА</div>
       <button id="btn-buy-jacket" class="dash-btn dash-btn-buy">
-        <span>👕 Свитшот Adidas (+реген)</span>
+        <span><img src="/assets/props/flat/clothing/adidas-jacket.webp" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />Свитшот Adidas (+реген)</span>
         <span>$10.00</span>
       </button>
       <button id="btn-buy-sneakers" class="dash-btn dash-btn-buy">
-        <span>👟 Кроссовки Nike (+скорость)</span>
+        <span><img src="/assets/props/flat/clothing/sneakers.webp" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />Кроссовки Nike (+скорость)</span>
         <span>$20.00</span>
       </button>
       <button id="btn-buy-crown" class="dash-btn dash-btn-buy">
-        <span>👑 Королевская Корона</span>
+        <span><img src="/assets/props/flat/clothing/crown.webp" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />Королевская Корона</span>
         <span>$100.00</span>
       </button>
       <button id="btn-close-dashboard" class="dash-btn dash-btn-danger" style="margin-top:10px;">Закрыть</button>
@@ -1017,8 +1017,8 @@ export class WorldScene extends Phaser.Scene {
     panel.className = 'dashboard-panel';
     panel.innerHTML = `
       <div class="inventory-header">
-        <span class="inventory-title">🎒 МОЙ РЮКЗАК</span>
-        <button id="btn-close-dashboard-x" class="dash-btn-close" title="Закрыть (I)">✕</button>
+        <span class="inventory-title"><img src="/assets/props/flat/bags/backpack-tourist.webp" style="width:24px;height:24px;vertical-align:middle;margin-right:6px;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));" />МОЙ РЮКЗАК</span>
+        <button id="btn-close-dashboard-x" class="dash-btn-close" title="Закрыть (I)">&times;</button>
       </div>
       <div class="bag-slot-row">
         <div id="equip-bag-slot" class="bag-slot empty">
@@ -1197,7 +1197,7 @@ export class WorldScene extends Phaser.Scene {
     if (moneyVal) moneyVal.textContent = this.localMoney.toFixed(2);
 
     const weightEl = this.hudOverlayEl.querySelector('#hud-weight');
-    if (weightEl) weightEl.innerHTML = `🎒 ${bagName} (${this.currentWeight.toFixed(1)} / ${maxLimit} кг)`;
+    if (weightEl) weightEl.innerHTML = `<img src="/assets/props/flat/bags/bag-adidas.webp" style="width:16px;height:16px;vertical-align:middle;margin-right:2px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5));" />${bagName} (${this.currentWeight.toFixed(1)} / ${maxLimit} кг)`;
 
     const weightBar = this.hudOverlayEl.querySelector('#hud-weight-bar') as HTMLDivElement;
     if (weightBar) {
@@ -1261,7 +1261,7 @@ export class WorldScene extends Phaser.Scene {
 
       if (i >= activeSlotsCount) {
         slot.classList.add('locked');
-        slot.innerHTML = `<span style="font-size:18px; opacity:0.35;">🔒</span>`;
+        slot.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" style="opacity:0.35;fill:none;stroke:#4a5261;stroke-width:2.5;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></svg>`;
         grid.appendChild(slot);
         continue;
       }
