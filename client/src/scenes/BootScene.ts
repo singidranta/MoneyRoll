@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 
-const VERSION = '1.5';
+const VERSION = '1.6';
 
 export class BootScene extends Phaser.Scene {
   constructor() {

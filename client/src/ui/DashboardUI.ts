@@ -10,7 +10,22 @@ import {
   isBag,
   isFood,
 } from '../../../shared/items';
-import { BOTTLE_TYPES, type BottleType } from '../../../shared/economy';
+import { BOTTLE_TYPES, type BottleType, HUNGER_MAX, HUNGER_CRITICAL } from '../../../shared/economy';
+
+// ============================================================
+//  SECTION: FOOD ITEMS
+// ============================================================
+
+const FOOD_ITEMS: { key: string; name: string; cost: number; path: string; desc: string }[] = [
+  { key: 'shawarma', name: 'Шаурма', cost: 1.5, path: '/assets/props/flat/food/shawarma.webp', desc: '+35 сытости, буст бега' },
+  { key: 'hotdog', name: 'Хот-дог', cost: 2.0, path: '/assets/props/flat/food/hotdog.webp', desc: '+20 сытости' },
+  { key: 'salad', name: 'Салат', cost: 2.5, path: '/assets/props/flat/food/salad.webp', desc: '+15 сытости, лёгкая' },
+  { key: 'energy', name: 'Энергетик', cost: 3.0, path: '/assets/props/flat/food/energy-drink.webp', desc: '+5 сытости, скорость 30с' },
+  { key: 'ramen', name: 'Рамен', cost: 3.5, path: '/assets/props/flat/food/ramen.webp', desc: '+30 сытости, горячий' },
+  { key: 'sushi', name: 'Суши', cost: 4.5, path: '/assets/props/flat/food/sushi.webp', desc: '+25 сытости, премиум' },
+  { key: 'pizza', name: 'Пицца', cost: 5.0, path: '/assets/props/flat/food/pizza.webp', desc: '+40 сытости, сытная' },
+  { key: 'steak', name: 'Стейк', cost: 7.0, path: '/assets/props/flat/food/steak.webp', desc: '+50 сытости, королевский' },
+];
 
 // ============================================================
 //  SECTION: DASHBOARD CALLBACKS
@@ -41,18 +56,14 @@ export type DashboardContext = {
   equippedBag: 'bag-adidas' | 'backpack-tourist' | null;
   currentWeight: number;
   tradeMode: boolean;
+  hunger: number;
 };
 
 export class DashboardUI {
   private root?: HTMLDivElement;
 
-  get element(): HTMLDivElement | undefined {
-    return this.root;
-  }
-
-  get isOpen(): boolean {
-    return !!this.root;
-  }
+  get element(): HTMLDivElement | undefined { return this.root; }
+  get isOpen(): boolean { return !!this.root; }
 
   show(ctx: DashboardContext, cb: DashboardCallbacks): void {
     this.destroy();
@@ -61,6 +72,11 @@ export class DashboardUI {
     dashboard.id = 'game-dashboard-container';
     document.body.appendChild(dashboard);
     this.root = dashboard;
+
+    // Hunger warning
+    if (ctx.hunger <= HUNGER_CRITICAL) {
+      dashboard.appendChild(this.createHungerWarning(ctx.hunger));
+    }
 
     if (ctx.nearKiosk) {
       dashboard.appendChild(this.createKioskPanel(cb));
@@ -79,15 +95,34 @@ export class DashboardUI {
     this.renderInventory(ctx, cb);
   }
 
-  refresh(ctx: DashboardContext, cb: DashboardCallbacks): void {
-    if (!this.root) return;
-    this.renderInventory(ctx, cb);
-  }
-
   destroy(): void {
     const existing = document.getElementById('game-dashboard-container');
-    if (existing) existing.remove();
+    if (!existing) { this.root = undefined; return; }
+
+    // Close all submenus too
+    existing.querySelectorAll('[data-popup]').forEach(el => el.remove());
+
+    existing.remove();
     this.root = undefined;
+  }
+
+  // ============================================================
+  //  SECTION: HUNGER WARNING
+  // ============================================================
+
+  private createHungerWarning(hunger: number): HTMLDivElement {
+    const panel = document.createElement('div');
+    panel.className = 'dashboard-panel hunger-warning-panel';
+    panel.style.cssText = 'border-color:#d45454 !important;';
+    panel.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;color:#d45454;font-weight:700;font-size:14px;margin-bottom:8px;">
+        <img src="/assets/icons/hunger.webp" width="24" height="24" alt="" />
+        <span>Голод: ${Math.round((hunger / HUNGER_MAX) * 100)}%</span>
+      </div>
+      <p style="font-size:12px;color:#aaa;margin:0 0 8px;">Скорость снижена! Купи еду в ларьке.</p>
+      <p style="font-size:11px;color:#888;margin:0;"><strong style="color:#e0b03a;">Совет:</strong> Шаурма ($1.5) - 35 сытости. Самый выгодный вариант!</p>
+    `;
+    return panel;
   }
 
   // ============================================================
@@ -99,13 +134,15 @@ export class DashboardUI {
     panel.className = 'dashboard-panel kiosk shop-panel-large';
     panel.innerHTML = `
       <h3><img src="/assets/props/flat/kiosk/recycle-machine.webp" alt="" />Автомат сдачи</h3>
-      <p>Кликни бутылку в инвентаре справа, чтобы сдать поштучно, или используй кнопку ниже для массовой сдачи.</p>
+      <p>Кликни бутылку в инвентаре, чтобы сдать поштучно.</p>
       <div class="kiosk-prices">
-        <div class="kiosk-price-row"><img src="/assets/props/flat/bottles/water.webp" /><span>Пластиковая вода</span><span class="kiosk-price">$0.05</span></div>
-        <div class="kiosk-price-row"><img src="/assets/props/flat/bottles/beer-glass.webp" /><span>Стекло пиво</span><span class="kiosk-price">$0.20</span></div>
-        <div class="kiosk-price-row"><img src="/assets/props/flat/bottles/wine.webp" /><span>Вино</span><span class="kiosk-price">$1.00</span></div>
-        <div class="kiosk-price-row"><img src="/assets/props/flat/bottles/champagne.webp" /><span>Шампанское</span><span class="kiosk-price">$5.00</span></div>
-        <div class="kiosk-price-row"><img src="/assets/props/flat/bottles/bordeaux-1982.webp" /><span>Bordeaux 1982</span><span class="kiosk-price">$50.00</span></div>
+        ${Object.entries(BOTTLE_TYPES).map(([key, def]) =>
+          `<div class="kiosk-price-row">
+            <img src="/assets/props/flat/bottles/${key}.webp" alt="" />
+            <span>${def.name}</span>
+            <span class="kiosk-price">$${def.price.toFixed(2)}</span>
+          </div>`
+        ).join('')}
       </div>
       <button id="btn-recycle-all" class="dash-btn dash-btn-primary">Сдать все бутылки</button>
       <button id="btn-close-dashboard" class="dash-btn dash-btn-danger">Закрыть</button>
@@ -120,29 +157,24 @@ export class DashboardUI {
     panel.className = 'dashboard-panel food shop-panel-large';
     panel.innerHTML = `
       <h3><img src="/assets/props/flat/kiosk/food-cart.webp" alt="" />Ларёк у Ашота</h3>
-      <p>Еда попадает в инвентарь. Кликни по ней, чтобы съесть.</p>
+      <p>Еда восстанавливает сытость. Кликни по еде в инвентаре — съешь.</p>
       <div class="shop-grid">
-        <div class="shop-card" id="btn-buy-shawa">
-          <div class="shop-card-img"><img src="/assets/props/flat/food/shawarma.webp" alt="Шаурма" /></div>
-          <div class="shop-card-info">
-            <span class="shop-card-name">Шаурма</span>
-            <span class="shop-card-desc">Восстанавливает 100% энергии + бафф бега</span>
+        ${FOOD_ITEMS.map(f => `
+          <div class="shop-card" data-item="${f.key}">
+            <div class="shop-card-img"><img src="${f.path}" alt="${f.name}" /></div>
+            <div class="shop-card-info">
+              <span class="shop-card-name">${f.name}</span>
+              <span class="shop-card-desc">${f.desc}</span>
+            </div>
+            <div class="shop-card-price">$${f.cost.toFixed(2)}</div>
           </div>
-          <div class="shop-card-price">$1.50</div>
-        </div>
-        <div class="shop-card" id="btn-buy-energy">
-          <div class="shop-card-img"><img src="/assets/props/flat/food/energy-drink.webp" alt="Ягуар" /></div>
-          <div class="shop-card-info">
-            <span class="shop-card-name">Энергетик «Ягуар»</span>
-            <span class="shop-card-desc">Бешеная скорость на 30 сек</span>
-          </div>
-          <div class="shop-card-price">$3.00</div>
-        </div>
+        `).join('')}
       </div>
       <button id="btn-close-dashboard" class="dash-btn dash-btn-danger">Закрыть</button>
     `;
-    panel.querySelector('#btn-buy-shawa')?.addEventListener('click', () => cb.onBuyItem('shawarma', 1.5));
-    panel.querySelector('#btn-buy-energy')?.addEventListener('click', () => cb.onBuyItem('energy', 3.0));
+    FOOD_ITEMS.forEach(f => {
+      panel.querySelector(`[data-item="${f.key}"]`)?.addEventListener('click', () => cb.onBuyItem(f.key, f.cost));
+    });
     panel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => cb.onClose());
     return panel;
   }
@@ -209,6 +241,10 @@ export class DashboardUI {
     return panel;
   }
 
+  // ============================================================
+  //  SECTION: INVENTORY PANEL
+  // ============================================================
+
   private createInventoryPanel(cb: DashboardCallbacks): HTMLDivElement {
     const panel = document.createElement('div');
     panel.id = 'dashboard-inventory-panel';
@@ -220,7 +256,9 @@ export class DashboardUI {
           Рюкзак
         </span>
         <div class="header-actions">
-          <button id="btn-save-game" class="dash-btn-save" title="Сохранить игру">💾</button>
+          <button id="btn-save-game" class="dash-btn-save" title="Сохранить игру">
+            <img src="/assets/icons/save.webp" width="16" height="16" alt="Сохранить" />
+          </button>
           <button id="btn-close-dashboard-x" class="dash-btn-close" title="Закрыть (I)">&times;</button>
         </div>
       </div>
@@ -228,12 +266,12 @@ export class DashboardUI {
         <div id="equip-bag-slot" class="bag-slot empty"></div>
         <div style="font-size:12px; line-height:1.4;">
           <strong style="color:#e8eaed; display:block; font-size:12px;">Слот сумки</strong>
-          <span id="equip-bag-desc" style="color:#8a919e;">Без сумки · 4 кармана</span>
+          <span id="equip-bag-desc" style="color:#8a919e;">Без сумки - 4 кармана</span>
         </div>
       </div>
       <div id="inventory-grid" class="inventory-grid-large"></div>
       <div class="dashboard-footer">
-        <span id="inv-guide-text">Кликни предмет · ПКМ — выбросить · Перетаскивай между слотами</span>
+        <span id="inv-guide-text">Кликни предмет - ПКМ выбросить - Перетаскивай</span>
         <span id="inv-weight-status">Вес: 0.0 / ${getMaxWeight(1)} кг</span>
       </div>
     `;
@@ -262,15 +300,13 @@ export class DashboardUI {
         const bagPath = `/assets/props/flat/bags/${ctx.equippedBag}.webp`;
         equipSlot.classList.add('equipped');
         equipSlot.innerHTML = `<img src="${bagPath}" alt="" />`;
-        equipDesc.innerHTML =
-          ctx.equippedBag === 'bag-adidas'
-            ? 'Сумка Adidas · 15 кг<br/><span style="color:#8a919e;font-size:11px;">Кликни, чтобы снять</span>'
-            : 'Рюкзак туриста · 30 кг<br/><span style="color:#8a919e;font-size:11px;">Кликни, чтобы снять</span>';
+        equipDesc.innerHTML = ctx.equippedBag === 'bag-adidas'
+          ? 'Сумка Adidas - 15 кг<br/><span style="color:#8a919e;font-size:11px;">Кликни, чтобы снять</span>'
+          : 'Рюкзак туриста - 30 кг<br/><span style="color:#8a919e;font-size:11px;">Кликни, чтобы снять</span>';
       } else {
         equipSlot.classList.add('empty');
-        equipSlot.innerHTML = `<span style="font-size:18px;color:#5a6270;">+</span>`;
-        equipDesc.innerHTML =
-          'Без сумки · 4 кармана<br/><span style="color:#8a919e;font-size:11px;">Купи сумку в магазине</span>';
+        equipSlot.innerHTML = '<span style="font-size:18px;color:#5a6270;">+</span>';
+        equipDesc.innerHTML = 'Без сумки - 4 кармана<br/><span style="color:#8a919e;font-size:11px;">Купи сумку в магазине</span>';
       }
     }
 
@@ -284,54 +320,33 @@ export class DashboardUI {
 
       if (i >= activeSlotsCount) {
         slot.classList.add('locked');
-        slot.innerHTML = `<svg width="24" height="24" viewBox="0 0 24 24" style="opacity:0.35;fill:none;stroke:#4a5261;stroke-width:2.5;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></svg>`;
+        slot.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" style="opacity:0.35;fill:none;stroke:#4a5261;stroke-width:2.5;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></svg>';
         grid.appendChild(slot);
         continue;
       }
 
       if (item) {
         slot.classList.add('has-item');
-
         const webpPath = getItemWebpPath(item);
         let label = '';
-
-        if (isBag(item)) {
-          label = '<span class="inv-slot-label">сумка</span>';
-        } else if (isFood(item)) {
-          label = '<span class="inv-slot-label">еда</span>';
-        } else {
-          const weight = BOTTLE_TYPES[item as BottleType]?.weight ?? 1.0;
-          label = `<span class="inv-slot-label">${weight} кг</span>`;
-        }
+        if (isBag(item)) { label = '<span class="inv-slot-label">сумка</span>'; }
+        else if (isFood(item)) { label = '<span class="inv-slot-label">еда</span>'; }
+        else { const weight = BOTTLE_TYPES[item as BottleType]?.weight ?? 1.0; label = `<span class="inv-slot-label">${weight} кг</span>`; }
 
         slot.innerHTML = `<img src="${webpPath}" />${label}`;
 
-        slot.addEventListener('mousedown', (e) => {
-          if (e.button === 0) cb.onStartDrag(e, i, item);
-        });
-
-        slot.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-          cb.onDropSlot(i);
-        });
-
+        slot.addEventListener('mousedown', (e) => { if (e.button === 0) cb.onStartDrag(e, i, item); });
+        slot.addEventListener('contextmenu', (e) => { e.preventDefault(); cb.onDropSlot(i); });
         slot.addEventListener('click', () => cb.onUseSlot(i, item));
       } else {
         slot.innerHTML = `<span style="font-size:11px;color:#4a5260;font-weight:600;">${i + 1}</span>`;
       }
 
-      slot.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        slot.classList.add('drag-over');
-      });
-      slot.addEventListener('dragleave', () => {
-        slot.classList.remove('drag-over');
-      });
+      slot.addEventListener('dragover', (e) => { e.preventDefault(); slot.classList.add('drag-over'); });
+      slot.addEventListener('dragleave', () => slot.classList.remove('drag-over'));
       slot.addEventListener('mouseup', (e) => {
         e.preventDefault();
-        if (cb.isDragActive() && cb.getDragFromSlot() !== i) {
-          cb.onFinishDrag(i);
-        }
+        if (cb.isDragActive() && cb.getDragFromSlot() !== i) cb.onFinishDrag(i);
         cb.onCancelDrag();
       });
 
@@ -340,19 +355,13 @@ export class DashboardUI {
 
     const maxLimit = getMaxWeight(ctx.backpackTier);
     const weightStatus = this.root.querySelector('#inv-weight-status');
-    if (weightStatus) {
-      weightStatus.textContent = `Вес: ${ctx.currentWeight.toFixed(1)} / ${maxLimit} кг`;
-    }
+    if (weightStatus) weightStatus.textContent = `Вес: ${ctx.currentWeight.toFixed(1)} / ${maxLimit} кг`;
 
     const guideText = this.root.querySelector('#inv-guide-text') as HTMLSpanElement | null;
     if (guideText) {
-      if (ctx.tradeMode) {
-        guideText.textContent = 'Выбери предмет для обмена с игроком';
-      } else {
-        guideText.textContent = ctx.nearKiosk
-          ? 'Кликни на бутылку, чтобы сдать! · ПКМ — выбросить'
-          : 'Кликни предмет · ПКМ — выбросить · Перетаскивай между слотами';
-      }
+      if (ctx.tradeMode) guideText.textContent = 'Выбери предмет для обмена с игроком';
+      else if (ctx.nearKiosk) guideText.textContent = 'Кликни на бутылку, чтобы сдать! ПКМ - выбросить';
+      else guideText.textContent = 'Кликни предмет - ПКМ выбросить - Перетаскивай';
     }
   }
 }

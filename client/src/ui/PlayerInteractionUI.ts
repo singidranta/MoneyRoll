@@ -23,21 +23,21 @@ export class PlayerInteractionUI {
         <button class="pi-menu-close" title="Закрыть">&times;</button>
       </div>
       <button class="pi-action-btn" data-action="steal">
-        <span class="pi-action-icon">🥷</span>
+        <span class="pi-action-icon"><img src="/assets/icons/steal.webp" width="24" height="24" alt="" /></span>
         <span class="pi-action-text">
           <strong>Украсть предмет</strong>
-          <small>Шанс: 20% — если провалишься, игрок узнает!</small>
+          <small>Шанс: 20% - если провалишься, игрок узнает!</small>
         </span>
       </button>
       <button class="pi-action-btn" data-action="trade">
-        <span class="pi-action-icon">🤝</span>
+        <span class="pi-action-icon"><img src="/assets/icons/trade.webp" width="24" height="24" alt="" /></span>
         <span class="pi-action-text">
           <strong>Предложить обмен</strong>
           <small>Выбери предмет из инвентаря для обмена</small>
         </span>
       </button>
       <button class="pi-action-btn" data-action="give">
-        <span class="pi-action-icon">💰</span>
+        <span class="pi-action-icon"><img src="/assets/icons/give-money.webp" width="24" height="24" alt="" /></span>
         <span class="pi-action-text">
           <strong>Дать денег</strong>
           <small>Перевести деньги другому игроку</small>
@@ -49,7 +49,6 @@ export class PlayerInteractionUI {
     this.menuEl = menu;
 
     menu.querySelector('.pi-menu-close')?.addEventListener('click', () => onClose());
-
     menu.querySelectorAll('.pi-action-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         const action = (e.currentTarget as HTMLElement).dataset.action as InteractionAction;
@@ -59,15 +58,10 @@ export class PlayerInteractionUI {
   }
 
   hide(): void {
-    if (this.menuEl) {
-      this.menuEl.remove();
-      this.menuEl = null;
-    }
+    if (this.menuEl) { this.menuEl.remove(); this.menuEl = null; }
   }
 
-  get isVisible(): boolean {
-    return this.menuEl !== null;
-  }
+  get isVisible(): boolean { return this.menuEl !== null; }
 }
 
 export function showTradeOfferPopup(
@@ -80,7 +74,8 @@ export function showTradeOfferPopup(
   popup.className = 'trade-offer-popup';
   popup.innerHTML = `
     <div class="trade-offer-header">
-      <span>🤝 Предложение обмена</span>
+      <img src="/assets/icons/trade.webp" width="20" height="20" alt="" style="vertical-align:middle;margin-right:6px;" />
+      <span>Предложение обмена</span>
     </div>
     <div class="trade-offer-body">
       <p>Игрок <strong>${fromId}</strong> предлагает:</p>
@@ -95,16 +90,8 @@ export function showTradeOfferPopup(
     </div>
   `;
   document.body.appendChild(popup);
-
-  popup.querySelector('#trade-accept')?.addEventListener('click', () => {
-    onAccept();
-    popup.remove();
-  });
-  popup.querySelector('#trade-decline')?.addEventListener('click', () => {
-    onDecline();
-    popup.remove();
-  });
-
+  popup.querySelector('#trade-accept')?.addEventListener('click', () => { onAccept(); popup.remove(); });
+  popup.querySelector('#trade-decline')?.addEventListener('click', () => { onDecline(); popup.remove(); });
   setTimeout(() => popup.remove(), 15_000);
 }
 

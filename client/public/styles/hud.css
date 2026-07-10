@@ -77,6 +77,22 @@
   font-size: 13px;
 }
 
+.hud-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  color: var(--mr-text);
+  font-size: 13px;
+}
+
+.hud-icon-sm {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .hud-stat-hint {
   color: var(--mr-text-dim);
   font-size: 11px;
@@ -418,6 +434,11 @@
 
 .dash-btn-danger:hover {
   background: #3a2020;
+}
+
+.hunger-warning-panel {
+  border-color: #d45454 !important;
+  background: #1a1414 !important;
 }
 
 .dash-btn-close {

@@ -1,4 +1,4 @@
-# 🤖 AGENT NOTES — read this first
+# AGENT NOTES — read this first
 
 > Внутренний файл для AI-агента Arena. Перед каждой сессией с проектом MoneyRoll читай этот файл.
 
@@ -7,8 +7,8 @@
 ## Project identity
 
 - **Name:** MoneyRoll
-- **Current version:** `1.5`
-- **Repo branch for this session:** `arena/019f46be-moneyroll`
+- **Current version:** `1.6`
+- **Repo branch for this session:** `arena/019f4bec-moneyroll`
 - **Stack:** Vite + TypeScript + Phaser 3 (client), Node.js + Express + `ws` (server), pnpm workspaces.
 
 ---
@@ -21,6 +21,8 @@
 | Tile size | `TILE_SIZE = 128` | `shared/map.ts` |
 | Inventory slots | `INVENTORY_SLOTS = 12` | `shared/economy.ts` |
 | Backpack tiers | `1: Карманы (2.5kg)`, `2: Сумка Adidas (15kg)`, `3: Рюкзак туриста (30kg)` | `shared/economy.ts` |
+| Hunger max | `HUNGER_MAX = 100` | `shared/economy.ts` |
+| Hunger drain | `HUNGER_DRAIN_PER_SEC = 1.5` | `shared/economy.ts` |
 
 Server automatically resets old `map.json` files whose size differs from these constants.
 
@@ -51,15 +53,14 @@ obstacle.refreshBody();
    //  SECTION: NAME
    // ============================================================
    ```
-   Do not use `// ───── ... ─────` style anymore.
-2. **No magic numbers.** Use constants from `shared/map.ts` and `shared/economy.ts` (`TILE_SIZE_HALF`, `BACKPACK_TIERS`, `PLAYER_SCALE`, etc.).
+2. **No magic numbers.** Use constants from `shared/map.ts` and `shared/economy.ts`.
 3. **Shared types.** Inventory items are `InventoryItem` from `shared/economy.ts`. Use it on both client and server.
 4. **Version bump ritual.** When the user asks for a new version, update:
    - `package.json` (root)
    - `client/package.json`
    - `server/package.json`
    - `client/src/scenes/BootScene.ts` (`VERSION`)
-   - `server/src/index.ts` (`/api/health` → `version`)
+   - `server/src/index.ts` (`/api/health` version)
 
 ---
 
@@ -68,44 +69,63 @@ obstacle.refreshBody();
 - Speak Russian to the user.
 - Keep answers short, show code/screenshots when possible.
 - Run `pnpm run typecheck` after significant changes.
-- Run `pnpm --filter @moneyroll/client build` before declaring a client release done.
-- Only push to `arena/019f46be-moneyroll`; never create or push other branches.
+- Only push to `arena/019f4bec-moneyroll`; never create or push other branches.
 - Use `gh` for pull requests and merges to `main` when the user asks.
 
 ---
 
-## Architecture after refactor (v1.5+)
+## Architecture after refactor (v1.6+)
 
+### Key data types
+
+```ts
+// OwnedProperty — allows buying multiple of same type at different points
+interface OwnedProperty {
+  id: string;       // unique purchase ID
+  type: PropertyType;
+  boughtAt: number;
+}
+
+// Hunger system
+HUNGER_MAX = 100
+HUNGER_DRAIN_PER_SEC = 1.5   // drains over time
+HUNGER_CRITICAL = 20          // below this = speed penalty
+HUNGER_STARVING = 5           // below this = can't sprint
+
+FoodType = 'shawarma' | 'energy' | 'hotdog' | 'sushi' | 'pizza' | 'salad' | 'ramen' | 'steak'
 ```
-client/src/
-  config/WorldConstants.ts   # speeds, scales, radii
-  systems/
-    MapRenderer.ts           # tiles + entities + obstacles
-    RemotePlayers.ts         # snapshot interpolation
-    SaveSystem.ts            # localStorage position only
-    MapSystem.ts / Netcode.ts / SoundEffects.ts
-  ui/
-    HudUI.ts / DashboardUI.ts / DragDrop.ts
-    PlayerInteractionUI.ts / FloatingText.ts
-  scenes/WorldScene.ts       # orchestration (~1.1k, was 2.1k)
 
-server/src/
-  World.ts                   # lifecycle, spawn, routing (~0.4k, was 1.0k)
-  PlayerStore.ts             # players.json persistence
-  handlers/
-    economyHandlers.ts       # pickup/sell/shop/bags/jobs
-    interactionHandlers.ts   # steal/trade/give
-  types.ts
+### Courier delivery fix (v1.6)
 
-shared/
-  economy.ts / map.ts
-  items.ts                   # getItemName, weight, type guards (client+server)
-```
+The courier delivery bug was: server checked distance to courier hub for delivery completion, not the delivery house.
+
+**Fix:** Server now collects `deliveryHouses: DeliveryPoint[]` from map entities (`apartment-1`, `apartment-2`, `building`) and accepts job-submit for courier if player is near EITHER a courier hub OR any apartment.
+
+### Property system fix (v1.6)
+
+Previously `properties` was `PropertyType[]` which prevented buying the same type twice.
+
+**Fix:** Properties are now `OwnedProperty[]` with unique IDs. The same property type can be bought multiple times at different map points. Passive income sums all owned properties.
+
+### Hunger system (v1.6)
+
+Server ticks hunger every 15 seconds. Client shows hunger bar in HUD. Food restores hunger (different amounts per food type). Low hunger = speed penalty. Starving = can't sprint.
+
+### Style
+
+- **NO emojis anywhere** — replaced with monoline SVG icons or webp sprites
+- Consistent flat dark theme throughout all UI
+- SVG icons in `client/public/assets/icons/` and `client/public/assets/icons/trash/`
+
+---
 
 ## Last known state
 
-- Grid is 20×20.
+- Grid is 20x20.
 - Collision bug is fixed.
-- Code is split into block-commented sections + modular files.
-- Server starts with an empty 20×20 map if no `map.json` exists or if the saved map size is wrong.
-- Build and typecheck pass.
+- Courier delivery now works at apartment buildings, not just courier hub.
+- Properties can be bought multiple times (same type, different locations).
+- Hunger system: eat or suffer penalties.
+- 8 food types available at food cart.
+- All emojis replaced with icons.
+- Typecheck and build should pass.
