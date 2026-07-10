@@ -35,17 +35,17 @@ export interface BottleDef {
 export const INVENTORY_SLOTS = 12;
 
 // ============================================================
-//  SECTION: FOOD & GEAR WEIGHTS
+//  SECTION: FOOD & GEAR WEIGHTS (реалистичные в кг)
 // ============================================================
 export const FOOD_WEIGHTS: Record<FoodType, number> = {
-  shawarma: 0.5,
-  energy: 0.3,
-  hotdog: 0.4,
-  sushi: 0.3,
-  pizza: 0.7,
-  salad: 0.4,
-  ramen: 0.6,
-  steak: 0.8,
+  shawarma: 0.65,    // Большой шаурма-ролл ~350-400г
+  energy: 0.55,      // Энергетик 0.5л в банке ~500-600г
+  hotdog: 0.22,      // Хот-дог ~150-200г (сосиска + булочка)
+  sushi: 0.35,       // Комплект суши ~200-300г
+  pizza: 0.28,       // Кусок пиццы ~180-250г (целая ~1кг)
+  salad: 0.38,       // Порция салата ~250-350г
+  ramen: 0.72,       // Большая миска рамена ~600-800г (с лапшой и бульоном)
+  steak: 0.42,       // Стейк ~300-350г (без гарнира)
 };
 
 export const FOOD_RESTORE: Record<FoodType, number> = {
@@ -114,22 +114,22 @@ export const GEAR_WEIGHTS: Record<'bag-adidas' | 'backpack-tourist', number> = {
 //  SECTION: BACKPACK TIERS
 // ============================================================
 export const BACKPACK_TIERS: Record<number, { name: string; maxWeight: number }> = {
-  1: { name: 'Карманы', maxWeight: 2.5 },
-  2: { name: 'Сумка Adidas', maxWeight: 15.0 },
-  3: { name: 'Рюкзак туриста', maxWeight: 30.0 },
+  1: { name: 'Карманы', maxWeight: 5.0 },      // Можно носить ~7-8 бутылок воды или 4-5 бутылок вина
+  2: { name: 'Сумка Adidas', maxWeight: 15.0 }, // Спортивная сумка - удобно для сбора мусора
+  3: { name: 'Рюкзак туриста', maxWeight: 30.0 }, // Большой рюкзак для серьёзной работы
 };
 
 export const MAX_INVENTORY_WEIGHT = BACKPACK_TIERS[1].maxWeight;
 
 // ============================================================
-//  SECTION: BOTTLE DEFINITIONS
+//  SECTION: BOTTLE DEFINITIONS (реалистичные веса в кг)
 // ============================================================
 export const BOTTLE_TYPES: Record<BottleType, BottleDef> = {
   'water': {
     id: 'water',
     name: 'Пластиковая вода',
     price: 0.05,
-    weight: 0.5,
+    weight: 0.55,     // 0.5л бутылка ~500-550г (пустая 15-20г + жидкость)
     spawnWeight: 60,
     color: 0x4da6ff,
     spriteKey: 'bottle-water',
@@ -138,7 +138,7 @@ export const BOTTLE_TYPES: Record<BottleType, BottleDef> = {
     id: 'beer-glass',
     name: 'Стекло пиво',
     price: 0.20,
-    weight: 1.0,
+    weight: 0.85,     // 0.5л стеклобутылка ~350г пустая + 500г жидкость ≈ 850г
     spawnWeight: 25,
     color: 0xcc7a00,
     spriteKey: 'bottle-beer-glass',
@@ -147,7 +147,7 @@ export const BOTTLE_TYPES: Record<BottleType, BottleDef> = {
     id: 'wine',
     name: 'Вино',
     price: 1.00,
-    weight: 1.5,
+    weight: 1.65,     // 0.75л стеклобутылка ~600г пустая + 750г жидкость ≈ 1.35кг, но тяжелее бутылка
     spawnWeight: 10,
     color: 0x990033,
     spriteKey: 'bottle-wine',
@@ -156,7 +156,7 @@ export const BOTTLE_TYPES: Record<BottleType, BottleDef> = {
     id: 'champagne',
     name: 'Шампанское',
     price: 5.00,
-    weight: 2.0,
+    weight: 2.2,      // 0.75л толстое стекло под давлением ~900г + 750г = 1.65кг + пробка/этикетка
     spawnWeight: 4,
     color: 0xffd700,
     spriteKey: 'bottle-champagne',
@@ -165,7 +165,7 @@ export const BOTTLE_TYPES: Record<BottleType, BottleDef> = {
     id: 'bordeaux-1982',
     name: 'Bordeaux 1982',
     price: 50.00,
-    weight: 3.0,
+    weight: 2.8,      // 0.75л премиум бутылка ~700-800г (толстое антикварное стекло) + жидкость
     spawnWeight: 1,
     color: 0x660022,
     spriteKey: 'bottle-bordeaux-1982',

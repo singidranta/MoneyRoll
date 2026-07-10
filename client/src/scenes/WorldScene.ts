@@ -303,9 +303,10 @@ export class WorldScene extends Phaser.Scene {
         break;
       }
       case 'pickup-success': {
+        const bottleId = msg.bottleId as string;
         this.localInventory = msg.inventory as (InventoryItem | null)[];
         this.currentWeight = msg.weight as number;
-        this.removeBottleClient(msg.bottleId as string);
+        this.removeBottleClient(bottleId);
         this.refreshUI();
         SoundEffects.playPopSound();
         this.float(msg.message as string, this.player.x, this.player.y - 20, '#7cfc00');
@@ -313,8 +314,18 @@ export class WorldScene extends Phaser.Scene {
       }
       case 'pickup-failed': {
         const bottleId = msg.bottleId as string;
-        if ((msg.reason as string) === 'already-taken') { this.removeBottleClient(bottleId); this.float('Опередили!', this.player.x, this.player.y - 20, '#ff3333'); }
-        else { this.float(msg.message as string, this.player.x, this.player.y - 20, '#ff9900'); }
+        // Разблокируем бутылку для повторного подбора
+        this.unlockBottle(bottleId);
+        if ((msg.reason as string) === 'already-taken') {
+          this.removeBottleClient(bottleId);
+          this.float('Опередили!', this.player.x, this.player.y - 20, '#ff3333');
+        } else if ((msg.reason as string) === 'inventory-full') {
+          this.float('Инвентарь полон!', this.player.x, this.player.y - 20, '#ff3333');
+        } else if ((msg.reason as string) === 'weight-exceeded') {
+          this.float('Слишком тяжело! Освободи вес.', this.player.x, this.player.y - 20, '#ff3333');
+        } else {
+          this.float(msg.message as string, this.player.x, this.player.y - 20, '#ff9900');
+        }
         break;
       }
       case 'sell-success': {
@@ -502,11 +513,25 @@ export class WorldScene extends Phaser.Scene {
 
     this.updateHud();
 
-    // Bottle pickup
+    // Bottle pickup - показать подсказку если рядом бутылка (НЕ скрывать сразу!)
     for (const [id, img] of this.bottlesMap.entries()) {
-      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, img.x, img.y) < BOTTLE_PICKUP_RADIUS && img.visible) {
-        img.setVisible(false);
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, img.x, img.y);
+      if (dist < BOTTLE_PICKUP_RADIUS && img.visible && !img.getData('pickingUp')) {
+        // Показываем подсказку рядом с бутылкой
+        const bottleHint = this.add.text(img.x, img.y - 30, '↑', {
+          fontFamily: 'system-ui', fontSize: '16px', fontStyle: 'bold',
+          color: '#ffffff', backgroundColor: '#00000088', padding: { x: 4, y: 2 },
+        });
+        bottleHint.setOrigin(0.5).setDepth(200);
+        this.tweens.add({ targets: bottleHint, y: img.y - 35, duration: 500, yoyo: true, repeat: -1 });
+
+        // Отправляем запрос на подбор
+        img.setData('pickingUp', true);
+        img.setData('hintText', bottleHint);
         this.sendGameMessage({ type: 'pickup-bottle', bottleId: id });
+
+        // Показываем "Подбираю..." над головой персонажа
+        this.float('Подбираю...', this.player.x, this.player.y - 25, '#ffffff');
       }
     }
 
@@ -1013,14 +1038,43 @@ export class WorldScene extends Phaser.Scene {
     const img = this.add.image(b.x, b.y, def.spriteKey);
     img.setScale(PLAYER_SCALE).setDepth(100);
     this.tweens.add({ targets: img, y: b.y - 4, duration: 1200 + Math.random() * 400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+    // Показываем вес бутылки над ней для реалистичности
+    const weightText = this.add.text(b.x, b.y - 25, `${def.weight.toFixed(1)}кг`, {
+      fontFamily: 'system-ui, monospace',
+      fontSize: '11px',
+      color: '#ffcc00',
+      backgroundColor: '#00000088',
+      padding: { x: 3, y: 1 },
+    });
+    weightText.setOrigin(0.5).setDepth(101);
+    img.setData('weightText', weightText);
+
     this.bottlesMap.set(b.id, img);
   }
 
   private removeBottleClient(id: string): void {
     const img = this.bottlesMap.get(id);
     if (!img) return;
+    // Удаляем подсказку и текст веса если есть
+    const hint = img.getData('hintText') as Phaser.GameObjects.Text | undefined;
+    if (hint) hint.destroy();
+    const weightText = img.getData('weightText') as Phaser.GameObjects.Text | undefined;
+    if (weightText) weightText.destroy();
+    img.setData('pickingUp', false);
     this.tweens.add({ targets: img, scale: 0.05, alpha: 0, angle: 180, duration: 200, onComplete: () => img.destroy() });
     this.bottlesMap.delete(id);
+  }
+
+  /** Разблокирует бутылку после неудачной попытки подбора, чтобы игрок мог попробовать снова */
+  private unlockBottle(bottleId: string): void {
+    const img = this.bottlesMap.get(bottleId);
+    if (!img) return;
+    img.setData('pickingUp', false);
+    img.setVisible(true);
+    // Удаляем старую подсказку (подсказка подбора)
+    const hint = img.getData('hintText') as Phaser.GameObjects.Text | undefined;
+    if (hint) hint.destroy();
   }
 
   // ============================================================
