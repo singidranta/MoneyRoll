@@ -546,15 +546,36 @@ export class WorldScene extends Phaser.Scene {
     let targetX = this.player.x;
     let targetY = this.player.y;
 
-    // Check delivery house proximity
+    // Check delivery house proximity - проверяем ВСЕ дома на карте если есть посылка
     let nearDeliveryHouse = false;
     let deliveryDist = Infinity;
+    let deliveryTargetX = 0;
+    let deliveryTargetY = 0;
+
+    if (this.hasParcel && this.mapJson?.entities) {
+      const entities = Object.values(this.mapJson.entities);
+      for (const entity of entities) {
+        if (entity.type === 'apartment-1' || entity.type === 'apartment-2' || entity.type === 'building') {
+          const houseX = entity.cellX * TILE_SIZE + TILE_SIZE_HALF;
+          const houseY = entity.cellY * TILE_SIZE + TILE_SIZE_HALF;
+          const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, houseX, houseY);
+          if (dist < INTERACT_RADIUS && dist < deliveryDist) {
+            deliveryDist = dist;
+            nearDeliveryHouse = true;
+            deliveryTargetX = houseX;
+            deliveryTargetY = houseY;
+          }
+        }
+      }
+    }
+
+    // Также проверяем активную delivery цель (если назначена)
     if (this.activeDeliveryTarget) {
-      deliveryDist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.activeDeliveryTarget.x, this.activeDeliveryTarget.y);
-      if (deliveryDist < INTERACT_RADIUS) {
+      const targetDist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.activeDeliveryTarget.x, this.activeDeliveryTarget.y);
+      if (targetDist < INTERACT_RADIUS) {
         nearDeliveryHouse = true;
-        targetX = this.activeDeliveryTarget.x;
-        targetY = this.activeDeliveryTarget.y - 20;
+        deliveryTargetX = this.activeDeliveryTarget.x;
+        deliveryTargetY = this.activeDeliveryTarget.y;
       }
     }
 
@@ -587,21 +608,24 @@ export class WorldScene extends Phaser.Scene {
     const nearAnyWorldInteraction = this.nearKioskId || this.nearFoodCartEntity || this.nearClothingShopEntity || this.nearJobEntity || this.nearPropertyEntity || this.nearSchoolEntity;
     const nearPlayer = this.nearPlayerId !== null;
 
-    if (nearAnyWorldInteraction || nearPlayer) {
-      if (!nearDeliveryHouse || !this.hasParcel) {
-        this.usePrompt.setPosition(targetX, targetY - PROMPT_OFFSET_Y);
-      }
+    // Показываем подсказку для доставки если есть посылка и рядом дом
+    if (nearDeliveryHouse && this.hasParcel) {
+      this.usePrompt.setPosition(deliveryTargetX, deliveryTargetY - PROMPT_OFFSET_Y);
+      this.usePrompt.setText('[E] Отдать посылку');
+      this.usePrompt.setVisible(true);
+    } else if (nearAnyWorldInteraction || nearPlayer) {
+      this.usePrompt.setPosition(targetX, targetY - PROMPT_OFFSET_Y);
       this.usePrompt.setText(this.interactionPrompt());
       this.usePrompt.setVisible(true);
+    }
 
-      if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
-        if (nearDeliveryHouse && this.hasParcel && this.activeDeliveryTarget) { this.deliverParcel(); }
-        else if (this.nearSchoolEntity) this.openSchool();
-        else if (this.nearJobEntity) this.completeNearbyJob();
-        else if (this.nearPropertyEntity) this.buyNearbyProperty();
-        else if (nearPlayer && !nearAnyWorldInteraction) this.showPlayerInteractionMenu();
-        else this.toggleInventory(true);
-      }
+    if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
+      if (nearDeliveryHouse && this.hasParcel) { this.deliverParcel(); }
+      else if (this.nearSchoolEntity) this.openSchool();
+      else if (this.nearJobEntity) this.completeNearbyJob();
+      else if (this.nearPropertyEntity) this.buyNearbyProperty();
+      else if (nearPlayer && !nearAnyWorldInteraction) this.showPlayerInteractionMenu();
+      else this.toggleInventory(true);
     } else {
       this.usePrompt.setVisible(false);
       this.playerMenu.hide();
@@ -653,7 +677,7 @@ export class WorldScene extends Phaser.Scene {
     const jobType = this.nearJobEntity ? this.jobTypeForEntity(this.nearJobEntity) : null;
     if (jobType === 'courier') {
       if (!this.licenses.courier) return '[E] Нужно образование курьера — иди в школу';
-      if (this.hasParcel && this.activeDeliveryTarget) return '[E] Отнести посылку в дом';
+      if (this.hasParcel) return '[E] Отдать посылку в ближайший дом';
       return '[E] Взять посылку (курьер)';
     }
     if (jobType === 'lemonade') return this.licenses.lemonadeBusiness ? '[E] Продавать лимонад' : '[E] Нужно образование — иди в школу';
@@ -739,7 +763,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private deliverParcel(): void {
-    if (!this.hasParcel || !this.activeDeliveryTarget) return;
+    if (!this.hasParcel) return;
     const slotIdx = this.localInventory.findIndex(i => i === 'parcel');
     if (slotIdx === -1) return;
 

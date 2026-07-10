@@ -72,11 +72,11 @@ export function getBackpackName(backpackTier: number): string {
   return BACKPACK_TIERS[backpackTier]?.name ?? BACKPACK_TIERS[1].name;
 }
 
-/** Путь к webp-иконке предмета (для HTML UI). */
+/** Путь к webp/png-иконке предмета (для HTML UI). */
 export function getItemWebpPath(item: InventoryItem): string {
   if (isBag(item)) return `/assets/props/flat/bags/${item}.webp`;
   if (isFood(item)) return FOOD_WEBP_PATHS[item];
-  if (item === 'parcel') return '/assets/props/flat/parcel.webp';
+  if (item === 'parcel') return '/assets/props/flat/parcel.png';
   return `/assets/props/flat/bottles/${item}.webp`;
 }
 
@@ -84,7 +84,7 @@ export function getItemWebpPath(item: InventoryItem): string {
 export function getItemSpriteKey(item: InventoryItem): string {
   if (isBag(item)) return item;
   if (isFood(item)) return FOOD_SPRITES[item];
-  if (item === 'parcel') return 'bottle-water';
+  if (item === 'parcel') return 'parcel';
   return BOTTLE_TYPES[item as BottleType]?.spriteKey ?? 'bottle-water';
 }
 
