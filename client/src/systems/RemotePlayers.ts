@@ -16,6 +16,15 @@ export type SnapshotEntry = {
   players: Map<string, { x: number; y: number }>;
 };
 
+// Добавим тип для состояния анимации удалённого игрока
+interface RemotePlayerState {
+  sprite: Phaser.GameObjects.Sprite;
+  prevX: number;
+  prevY: number;
+  lastMoveTime: number;
+  facingDir: 'down' | 'left' | 'right' | 'up';
+}
+
 export function isPeerSnapshot(v: unknown): v is PeerSnapshot {
   if (!v || typeof v !== 'object') return false;
   const p = v as Partial<PeerSnapshot>;
@@ -24,9 +33,25 @@ export function isPeerSnapshot(v: unknown): v is PeerSnapshot {
 
 export class RemotePlayers {
   readonly sprites = new Map<string, Phaser.GameObjects.Sprite>();
+  private playerStates = new Map<string, RemotePlayerState>();
   snapshotBuffer: SnapshotEntry[] = [];
 
-  constructor(private readonly scene: Phaser.Scene) {}
+  constructor(private readonly scene: Phaser.Scene) {
+    this.createRemoteAnimations();
+  }
+
+  /** Создаём анимации для remote игроков (те же, что и для локального) */
+  private createRemoteAnimations(): void {
+    if (this.scene.anims.exists('remote-walk-down')) return;
+    const dirs = ['down', 'left', 'right', 'up'] as const;
+    for (let i = 0; i < dirs.length; i++) {
+      this.scene.anims.create({
+        key: `remote-walk-${dirs[i]}`,
+        frames: this.scene.anims.generateFrameNumbers('player-sprites', { start: i * 4, end: i * 4 + 3 }),
+        frameRate: 10, repeat: -1,
+      });
+    }
+  }
 
   clearBuffer(): void {
     this.snapshotBuffer = [];
@@ -47,6 +72,14 @@ export class RemotePlayers {
       sprite.setTint(REMOTE_TINT);
       sprite.setDepth(500);
       this.sprites.set(id, sprite);
+      // Инициализируем состояние
+      this.playerStates.set(id, {
+        sprite,
+        prevX: x,
+        prevY: y,
+        lastMoveTime: performance.now(),
+        facingDir: 'down',
+      });
     }
     sprite.x = x;
     sprite.y = y;
@@ -65,7 +98,7 @@ export class RemotePlayers {
     return this.sprites.size;
   }
 
-  /** Интерполяция remote-игроков между снапшотами. */
+  /** Интерполяция remote-игроков между снапшотами + анимации ходьбы/idle */
   renderInterpolated(now: number, myId: string | null): void {
     if (this.snapshotBuffer.length === 0) return;
     const renderTime = now - SNAPSHOT_INTERP_DELAY_MS;
@@ -94,6 +127,8 @@ export class RemotePlayers {
     for (const [id, pos] of source.players) {
       if (myId && id === myId) continue;
       seen.add(id);
+
+      // Интерполяция позиции
       const a = A.players.get(id) ?? pos;
       let px: number;
       let py: number;
@@ -105,7 +140,48 @@ export class RemotePlayers {
         px = a.x;
         py = a.y;
       }
-      this.ensure(id, px, py);
+
+      // Проверяем, двигается ли игрок
+      const state = this.playerStates.get(id);
+      const isMoving = state ? (Math.abs(px - state.prevX) > 0.5 || Math.abs(py - state.prevY) > 0.5) : true;
+
+      // Определяем направление движения
+      let facingDir: 'down' | 'left' | 'right' | 'up' = 'down';
+      if (state) {
+        const dx = px - state.prevX;
+        const dy = py - state.prevY;
+        if (Math.abs(dx) > Math.abs(dy)) {
+          facingDir = dx > 0 ? 'right' : 'left';
+        } else if (Math.abs(dy) > 0.1) {
+          facingDir = dy > 0 ? 'down' : 'up';
+        } else {
+          facingDir = state.facingDir;
+        }
+      }
+
+      const sprite = this.ensure(id, px, py);
+
+      // Обновляем состояние
+      if (state) {
+        state.prevX = px;
+        state.prevY = py;
+        state.lastMoveTime = now;
+        state.facingDir = facingDir;
+      }
+
+      // Проигрываем анимацию ходьбы если двигается, иначе idle
+      if (isMoving) {
+        const animKey = `remote-walk-${facingDir}`;
+        if (sprite.anims.currentAnim?.key !== animKey) {
+          sprite.play(animKey, true);
+        }
+      } else {
+        sprite.stop();
+        // Показываем idle фрейм в направлении взгляда
+        const dirs = ['down', 'left', 'right', 'up'] as const;
+        const dirIndex = dirs.indexOf(facingDir);
+        sprite.setFrame(dirIndex * 4); // Первый кадр каждого направления
+      }
     }
 
     for (const id of Array.from(this.sprites.keys())) {
@@ -116,6 +192,7 @@ export class RemotePlayers {
   destroy(): void {
     for (const sprite of this.sprites.values()) sprite.destroy();
     this.sprites.clear();
+    this.playerStates.clear();
     this.snapshotBuffer = [];
   }
 }

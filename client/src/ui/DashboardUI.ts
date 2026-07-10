@@ -329,9 +329,16 @@ export class DashboardUI {
         slot.classList.add('has-item');
         const webpPath = getItemWebpPath(item);
         let label = '';
-        if (isBag(item)) { label = '<span class="inv-slot-label">сумка</span>'; }
-        else if (isFood(item)) { label = '<span class="inv-slot-label">еда</span>'; }
-        else { const weight = BOTTLE_TYPES[item as BottleType]?.weight ?? 1.0; label = `<span class="inv-slot-label">${weight} кг</span>`; }
+        if (item === 'parcel') {
+          label = '<span class="inv-slot-label">посылка</span>';
+        } else if (isBag(item)) {
+          label = '<span class="inv-slot-label">сумка</span>';
+        } else if (isFood(item)) {
+          label = '<span class="inv-slot-label">еда</span>';
+        } else {
+          const weight = BOTTLE_TYPES[item as BottleType]?.weight ?? 1.0;
+          label = `<span class="inv-slot-label">${weight} кг</span>`;
+        }
 
         slot.innerHTML = `<img src="${webpPath}" />${label}`;
 

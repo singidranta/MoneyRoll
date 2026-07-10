@@ -8,6 +8,7 @@ import type {
   JobType,
   OwnedProperty,
   PropertyType,
+  PlayerEquipment,
 } from '../../shared/economy.js';
 
 export type WireMessage = {
@@ -28,6 +29,7 @@ export type Client = {
   hasJacket: boolean;
   hasSneakers: boolean;
   hasCrown: boolean;
+  equipment: PlayerEquipment;  // Экипировка для визуального отображения
   properties: OwnedProperty[];
   lastJobAt: Record<JobType, number>;
   playerToken: string | null;

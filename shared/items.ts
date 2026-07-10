@@ -5,6 +5,9 @@
 import {
   BACKPACK_TIERS,
   BOTTLE_TYPES,
+  CLOTHING_WEIGHTS,
+  CLOTHING_NAMES,
+  CLOTHING_ICON_PATHS,
   FOOD_WEIGHTS,
   FOOD_NAMES,
   FOOD_WEBP_PATHS,
@@ -13,6 +16,7 @@ import {
   type BottleType,
   type FoodType,
   type InventoryItem,
+  type EquippableClothing,
 } from './economy.js';
 
 // ============================================================
@@ -31,6 +35,26 @@ export function isBottle(item: InventoryItem): item is BottleType {
   return item in BOTTLE_TYPES;
 }
 
+export function isClothing(item: InventoryItem): item is EquippableClothing {
+  return item in CLOTHING_WEIGHTS;
+}
+
+export function isHeadSlot(item: InventoryItem): item is 'cap' | 'beanie' {
+  return item === 'cap' || item === 'beanie';
+}
+
+export function isBodySlot(item: InventoryItem): item is 'hoodie' {
+  return item === 'hoodie';
+}
+
+export function isLegsSlot(item: InventoryItem): item is 'jeans' {
+  return item === 'jeans';
+}
+
+export function isFeetSlot(item: InventoryItem): item is 'boots' {
+  return item === 'boots';
+}
+
 // ============================================================
 //  SECTION: ITEM META
 // ============================================================
@@ -40,6 +64,7 @@ export function getItemName(item: InventoryItem): string {
   if (item === 'backpack-tourist') return 'Рюкзак туриста';
   if (isFood(item)) return FOOD_NAMES[item];
   if (item === 'parcel') return 'Посылка';
+  if (isClothing(item)) return CLOTHING_NAMES[item];
   return BOTTLE_TYPES[item as BottleType]?.name ?? item;
 }
 
@@ -47,6 +72,7 @@ export function getItemWeight(item: InventoryItem): number {
   if (isBag(item)) return GEAR_WEIGHTS[item];
   if (isFood(item)) return FOOD_WEIGHTS[item];
   if (item === 'parcel') return 1.5;
+  if (isClothing(item)) return CLOTHING_WEIGHTS[item];
   return BOTTLE_TYPES[item as BottleType]?.weight ?? 0;
 }
 
@@ -72,11 +98,12 @@ export function getBackpackName(backpackTier: number): string {
   return BACKPACK_TIERS[backpackTier]?.name ?? BACKPACK_TIERS[1].name;
 }
 
-/** Путь к webp-иконке предмета (для HTML UI). */
+/** Путь к иконке предмета (для HTML UI). */
 export function getItemWebpPath(item: InventoryItem): string {
   if (isBag(item)) return `/assets/props/flat/bags/${item}.webp`;
   if (isFood(item)) return FOOD_WEBP_PATHS[item];
-  if (item === 'parcel') return '/assets/props/flat/parcel.webp';
+  if (item === 'parcel') return '/assets/props/flat/parcel.png';
+  if (isClothing(item)) return CLOTHING_ICON_PATHS[item];
   return `/assets/props/flat/bottles/${item}.webp`;
 }
 
@@ -84,7 +111,8 @@ export function getItemWebpPath(item: InventoryItem): string {
 export function getItemSpriteKey(item: InventoryItem): string {
   if (isBag(item)) return item;
   if (isFood(item)) return FOOD_SPRITES[item];
-  if (item === 'parcel') return 'bottle-water';
+  if (item === 'parcel') return 'parcel';
+  if (isClothing(item)) return item; // использует тот же ключ что и путь
   return BOTTLE_TYPES[item as BottleType]?.spriteKey ?? 'bottle-water';
 }
 

@@ -51,6 +51,22 @@
   display: none;
 }
 
+/* Все иконки в HUD белые */
+#game-hud-overlay img,
+#game-dashboard-container img,
+.player-interaction-menu img,
+.trade-offer-popup img {
+  filter: brightness(0) invert(1);
+}
+
+/* Исключение для иконок с уже применённым фильтром */
+#game-hud-overlay img[style*="filter"],
+#game-dashboard-container img[style*="filter"],
+.player-interaction-menu img[style*="filter"],
+.trade-offer-popup img[style*="filter"] {
+  filter: none;
+}
+
 /* Stats — bottom-left */
 #hud-stats-panel {
   position: fixed;

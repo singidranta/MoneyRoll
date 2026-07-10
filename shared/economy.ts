@@ -1,4 +1,49 @@
 // ============================================================
+//  SECTION: CLOTHING TYPES (для визуального отображения на игроке)
+// ============================================================
+export type HeadSlot = 'cap' | 'beanie';
+export type BodySlot = 'hoodie';
+export type LegsSlot = 'jeans';
+export type FeetSlot = 'boots';
+
+export type EquippableClothing = HeadSlot | BodySlot | LegsSlot | FeetSlot;
+
+// ============================================================
+//  SECTION: CLOTHING WEIGHTS & PRICES
+// ============================================================
+export const CLOTHING_WEIGHTS: Record<EquippableClothing, number> = {
+  'cap': 0.15,
+  'beanie': 0.12,
+  'hoodie': 0.45,
+  'jeans': 0.55,
+  'boots': 0.8,
+};
+
+export const CLOTHING_PRICES: Record<EquippableClothing, number> = {
+  'cap': 5.0,
+  'beanie': 7.0,
+  'hoodie': 25.0,
+  'jeans': 18.0,
+  'boots': 30.0,
+};
+
+export const CLOTHING_NAMES: Record<EquippableClothing, string> = {
+  'cap': 'Кепка',
+  'beanie': 'Шапка',
+  'hoodie': 'Худи',
+  'jeans': 'Джинсы',
+  'boots': 'Берцы',
+};
+
+export const CLOTHING_ICON_PATHS: Record<EquippableClothing, string> = {
+  'cap': '/assets/props/flat/clothing/cap.png',
+  'beanie': '/assets/props/flat/clothing/beanie.png',
+  'hoodie': '/assets/props/flat/clothing/hoodie.png',
+  'jeans': '/assets/props/flat/clothing/jeans.png',
+  'boots': '/assets/props/flat/clothing/boots.png',
+};
+
+// ============================================================
 //  SECTION: INVENTORY ITEM TYPES
 // ============================================================
 export type InventoryItem =
@@ -6,7 +51,11 @@ export type InventoryItem =
   | 'bag-adidas'
   | 'backpack-tourist'
   | FoodType
-  | 'parcel';
+  | 'parcel'
+  | HeadSlot
+  | BodySlot
+  | LegsSlot
+  | FeetSlot;
 
 export type FoodType = 'shawarma' | 'energy' | 'hotdog' | 'sushi' | 'pizza' | 'salad' | 'ramen' | 'steak';
 
@@ -35,17 +84,17 @@ export interface BottleDef {
 export const INVENTORY_SLOTS = 12;
 
 // ============================================================
-//  SECTION: FOOD & GEAR WEIGHTS
+//  SECTION: FOOD & GEAR WEIGHTS (реалистичные в кг)
 // ============================================================
 export const FOOD_WEIGHTS: Record<FoodType, number> = {
-  shawarma: 0.5,
-  energy: 0.3,
-  hotdog: 0.4,
-  sushi: 0.3,
-  pizza: 0.7,
-  salad: 0.4,
-  ramen: 0.6,
-  steak: 0.8,
+  shawarma: 0.65,    // Большой шаурма-ролл ~350-400г
+  energy: 0.55,      // Энергетик 0.5л в банке ~500-600г
+  hotdog: 0.22,      // Хот-дог ~150-200г (сосиска + булочка)
+  sushi: 0.35,       // Комплект суши ~200-300г
+  pizza: 0.28,       // Кусок пиццы ~180-250г (целая ~1кг)
+  salad: 0.38,       // Порция салата ~250-350г
+  ramen: 0.72,       // Большая миска рамена ~600-800г (с лапшой и бульоном)
+  steak: 0.42,       // Стейк ~300-350г (без гарнира)
 };
 
 export const FOOD_RESTORE: Record<FoodType, number> = {
@@ -93,14 +142,14 @@ export const FOOD_SPRITES: Record<FoodType, string> = {
 };
 
 export const FOOD_WEBP_PATHS: Record<FoodType, string> = {
-  shawarma: '/assets/props/flat/food/shawarma.webp',
-  energy: '/assets/props/flat/food/energy-drink.webp',
-  hotdog: '/assets/props/flat/food/hotdog.webp',
-  sushi: '/assets/props/flat/food/sushi.webp',
-  pizza: '/assets/props/flat/food/pizza.webp',
-  salad: '/assets/props/flat/food/salad.webp',
-  ramen: '/assets/props/flat/food/ramen.webp',
-  steak: '/assets/props/flat/food/steak.webp',
+  shawarma: '/assets/props/flat/food/shawarma.png',
+  energy: '/assets/props/flat/food/energy.png',
+  hotdog: '/assets/props/flat/food/hotdog.png',
+  sushi: '/assets/props/flat/food/sushi.png',
+  pizza: '/assets/props/flat/food/pizza.png',
+  salad: '/assets/props/flat/food/salad.png',
+  ramen: '/assets/props/flat/food/ramen.png',
+  steak: '/assets/props/flat/food/steak.png',
 };
 
 export const PARCEL_WEIGHT = 1.5;
@@ -114,22 +163,22 @@ export const GEAR_WEIGHTS: Record<'bag-adidas' | 'backpack-tourist', number> = {
 //  SECTION: BACKPACK TIERS
 // ============================================================
 export const BACKPACK_TIERS: Record<number, { name: string; maxWeight: number }> = {
-  1: { name: 'Карманы', maxWeight: 2.5 },
-  2: { name: 'Сумка Adidas', maxWeight: 15.0 },
-  3: { name: 'Рюкзак туриста', maxWeight: 30.0 },
+  1: { name: 'Карманы', maxWeight: 5.0 },      // Можно носить ~7-8 бутылок воды или 4-5 бутылок вина
+  2: { name: 'Сумка Adidas', maxWeight: 15.0 }, // Спортивная сумка - удобно для сбора мусора
+  3: { name: 'Рюкзак туриста', maxWeight: 30.0 }, // Большой рюкзак для серьёзной работы
 };
 
 export const MAX_INVENTORY_WEIGHT = BACKPACK_TIERS[1].maxWeight;
 
 // ============================================================
-//  SECTION: BOTTLE DEFINITIONS
+//  SECTION: BOTTLE DEFINITIONS (реалистичные веса в кг)
 // ============================================================
 export const BOTTLE_TYPES: Record<BottleType, BottleDef> = {
   'water': {
     id: 'water',
     name: 'Пластиковая вода',
     price: 0.05,
-    weight: 0.5,
+    weight: 0.55,     // 0.5л бутылка ~500-550г (пустая 15-20г + жидкость)
     spawnWeight: 60,
     color: 0x4da6ff,
     spriteKey: 'bottle-water',
@@ -138,7 +187,7 @@ export const BOTTLE_TYPES: Record<BottleType, BottleDef> = {
     id: 'beer-glass',
     name: 'Стекло пиво',
     price: 0.20,
-    weight: 1.0,
+    weight: 0.85,     // 0.5л стеклобутылка ~350г пустая + 500г жидкость ≈ 850г
     spawnWeight: 25,
     color: 0xcc7a00,
     spriteKey: 'bottle-beer-glass',
@@ -147,7 +196,7 @@ export const BOTTLE_TYPES: Record<BottleType, BottleDef> = {
     id: 'wine',
     name: 'Вино',
     price: 1.00,
-    weight: 1.5,
+    weight: 1.65,     // 0.75л стеклобутылка ~600г пустая + 750г жидкость ≈ 1.35кг, но тяжелее бутылка
     spawnWeight: 10,
     color: 0x990033,
     spriteKey: 'bottle-wine',
@@ -156,7 +205,7 @@ export const BOTTLE_TYPES: Record<BottleType, BottleDef> = {
     id: 'champagne',
     name: 'Шампанское',
     price: 5.00,
-    weight: 2.0,
+    weight: 2.2,      // 0.75л толстое стекло под давлением ~900г + 750г = 1.65кг + пробка/этикетка
     spawnWeight: 4,
     color: 0xffd700,
     spriteKey: 'bottle-champagne',
@@ -165,7 +214,7 @@ export const BOTTLE_TYPES: Record<BottleType, BottleDef> = {
     id: 'bordeaux-1982',
     name: 'Bordeaux 1982',
     price: 50.00,
-    weight: 3.0,
+    weight: 2.8,      // 0.75л премиум бутылка ~700-800г (толстое антикварное стекло) + жидкость
     spawnWeight: 1,
     color: 0x660022,
     spriteKey: 'bottle-bordeaux-1982',
@@ -195,6 +244,12 @@ export const SHOP_PRICES: Record<ShopItemType, number> = {
   champagne: 0,
   'bordeaux-1982': 0,
   parcel: 0,
+  // Новая одежда
+  'cap': 5.0,
+  'beanie': 7.0,
+  'hoodie': 25.0,
+  'jeans': 18.0,
+  'boots': 30.0,
 };
 
 // ============================================================
@@ -254,30 +309,34 @@ export const COURIER_DISTRICTS = [
 
 export type CourierDistrictId = typeof COURIER_DISTRICTS[number]['id'];
 
+// Упрощённая сортировка - только 4 понятных категории с картинками
 export const TRASH_FRACTIONS = [
-  { id: 'plastic', name: 'Пластик', color: '#facc15', icon: 'plastic' },
-  { id: 'glass', name: 'Стекло', color: '#22c55e', icon: 'glass' },
-  { id: 'paper', name: 'Бумага', color: '#3b82f6', icon: 'paper' },
-  { id: 'metal', name: 'Металл', color: '#a1a1aa', icon: 'metal' },
-  { id: 'organic', name: 'Органика', color: '#a16207', icon: 'organic' },
-  { id: 'ewaste', name: 'Электроника', color: '#ef4444', icon: 'ewaste' },
+  { id: 'plastic', name: 'Пластик', color: '#facc15', icon: 'sort-plastic', iconPath: '/assets/icons/sort-plastic.png' },
+  { id: 'glass', name: 'Стекло', color: '#22c55e', icon: 'sort-glass', iconPath: '/assets/icons/sort-glass.png' },
+  { id: 'paper', name: 'Бумага', color: '#3b82f6', icon: 'sort-paper', iconPath: '/assets/icons/sort-paper.png' },
+  { id: 'metal', name: 'Металл', color: '#a1a1aa', icon: 'sort-metal', iconPath: '/assets/icons/sort-metal.png' },
 ] as const;
 
 export type TrashFractionId = typeof TRASH_FRACTIONS[number]['id'];
 
-export const TRASH_SORT_ITEMS: { name: string; fraction: TrashFractionId; icon: string }[] = [
-  { name: 'ПЭТ бутылка', fraction: 'plastic', icon: 'bottle-water' },
-  { name: 'Пивная бутылка', fraction: 'glass', icon: 'bottle-beer-glass' },
-  { name: 'Газета', fraction: 'paper', icon: 'newspaper' },
-  { name: 'Банка колы', fraction: 'metal', icon: 'can' },
-  { name: 'Огрызок', fraction: 'organic', icon: 'apple-core' },
-  { name: 'Батарейка', fraction: 'ewaste', icon: 'battery' },
-  { name: 'Пакет', fraction: 'plastic', icon: 'bag-plastic' },
-  { name: 'Винная бутылка', fraction: 'glass', icon: 'bottle-wine' },
-  { name: 'Коробка', fraction: 'paper', icon: 'box' },
-  { name: 'Консервная банка', fraction: 'metal', icon: 'can-food' },
-  { name: 'Банановая кожура', fraction: 'organic', icon: 'banana' },
-  { name: 'Старый телефон', fraction: 'ewaste', icon: 'phone-old' },
+// Простые предметы для сортировки - по 3 на категорию, всего 12 штук
+export const TRASH_SORT_ITEMS: { name: string; fraction: TrashFractionId; icon: string; iconPath: string }[] = [
+  // Пластик
+  { name: 'ПЭТ бутылка', fraction: 'plastic', icon: 'bottle-water', iconPath: '/assets/props/flat/bottles/water.png' },
+  { name: 'Пакет', fraction: 'plastic', icon: 'bag-plastic', iconPath: '/assets/props/flat/trash/bag-plastic.png' },
+  { name: 'Контейнер', fraction: 'plastic', icon: 'container', iconPath: '/assets/props/flat/trash/container.png' },
+  // Стекло
+  { name: 'Пивная бутылка', fraction: 'glass', icon: 'bottle-beer', iconPath: '/assets/props/flat/bottles/beer-glass.png' },
+  { name: 'Винная бутылка', fraction: 'glass', icon: 'bottle-wine', iconPath: '/assets/props/flat/bottles/wine.png' },
+  { name: 'Банка стеклянная', fraction: 'glass', icon: 'jar', iconPath: '/assets/props/flat/trash/jar.png' },
+  // Бумага
+  { name: 'Газета', fraction: 'paper', icon: 'newspaper', iconPath: '/assets/props/flat/trash/newspaper.png' },
+  { name: 'Картонная коробка', fraction: 'paper', icon: 'box', iconPath: '/assets/props/flat/trash/box.png' },
+  { name: 'Бумажный пакет', fraction: 'paper', icon: 'paper-bag', iconPath: '/assets/props/flat/trash/paper-bag.png' },
+  // Металл
+  { name: 'Алюминиевая банка', fraction: 'metal', icon: 'can', iconPath: '/assets/props/flat/trash/can.png' },
+  { name: 'Консервная банка', fraction: 'metal', icon: 'can-food', iconPath: '/assets/props/flat/trash/can-food.png' },
+  { name: 'Металлическая пробка', fraction: 'metal', icon: 'cap', iconPath: '/assets/props/flat/trash/cap.png' },
 ];
 
 export interface LemonadeRecipe {
@@ -427,6 +486,21 @@ export interface OwnedProperty {
   boughtAt: number; // timestamp
 }
 
+// Система экипировки - 4 слота для отображения одежды на игроке
+export interface PlayerEquipment {
+  head: EquippableClothing | null;   // Головной убор (cap, beanie)
+  body: EquippableClothing | null;   // Тело (hoodie)
+  legs: EquippableClothing | null;   // Штаны (jeans)
+  feet: EquippableClothing | null;   // Обувь (boots)
+}
+
+export const DEFAULT_EQUIPMENT: PlayerEquipment = {
+  head: null,
+  body: null,
+  legs: null,
+  feet: null,
+};
+
 export interface PlayerSave {
   money: number;
   inventory: (InventoryItem | null)[];
@@ -434,6 +508,7 @@ export interface PlayerSave {
   hasJacket: boolean;
   hasSneakers: boolean;
   hasCrown: boolean;
+  equipment: PlayerEquipment;  // Экипировка для отображения
   properties: OwnedProperty[];
   jobSkills?: JobSkills;
   licenses?: JobLicense;

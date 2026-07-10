@@ -142,6 +142,9 @@ export class WorldScene extends Phaser.Scene {
   private activeDeliveryTarget: { x: number; y: number; key: string } | null = null;
   private hasParcel = false;
   private deliveryHighlight?: Phaser.GameObjects.Graphics;
+  
+  // Trade state - координаты цели для проверки расстояния
+  private tradeTargetCoords: { x: number; y: number } | null = null;
 
   // UI
   private hud = new HudUI();
@@ -303,9 +306,10 @@ export class WorldScene extends Phaser.Scene {
         break;
       }
       case 'pickup-success': {
+        const bottleId = msg.bottleId as string;
         this.localInventory = msg.inventory as (InventoryItem | null)[];
         this.currentWeight = msg.weight as number;
-        this.removeBottleClient(msg.bottleId as string);
+        this.removeBottleClient(bottleId);
         this.refreshUI();
         SoundEffects.playPopSound();
         this.float(msg.message as string, this.player.x, this.player.y - 20, '#7cfc00');
@@ -313,8 +317,18 @@ export class WorldScene extends Phaser.Scene {
       }
       case 'pickup-failed': {
         const bottleId = msg.bottleId as string;
-        if ((msg.reason as string) === 'already-taken') { this.removeBottleClient(bottleId); this.float('Опередили!', this.player.x, this.player.y - 20, '#ff3333'); }
-        else { this.float(msg.message as string, this.player.x, this.player.y - 20, '#ff9900'); }
+        // Разблокируем бутылку для повторного подбора
+        this.unlockBottle(bottleId);
+        if ((msg.reason as string) === 'already-taken') {
+          this.removeBottleClient(bottleId);
+          this.float('Опередили!', this.player.x, this.player.y - 20, '#ff3333');
+        } else if ((msg.reason as string) === 'inventory-full') {
+          this.float('Инвентарь полон!', this.player.x, this.player.y - 20, '#ff3333');
+        } else if ((msg.reason as string) === 'weight-exceeded') {
+          this.float('Слишком тяжело! Освободи вес.', this.player.x, this.player.y - 20, '#ff3333');
+        } else {
+          this.float(msg.message as string, this.player.x, this.player.y - 20, '#ff9900');
+        }
         break;
       }
       case 'sell-success': {
@@ -502,11 +516,25 @@ export class WorldScene extends Phaser.Scene {
 
     this.updateHud();
 
-    // Bottle pickup
+    // Bottle pickup - показать подсказку если рядом бутылка (НЕ скрывать сразу!)
     for (const [id, img] of this.bottlesMap.entries()) {
-      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, img.x, img.y) < BOTTLE_PICKUP_RADIUS && img.visible) {
-        img.setVisible(false);
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, img.x, img.y);
+      if (dist < BOTTLE_PICKUP_RADIUS && img.visible && !img.getData('pickingUp')) {
+        // Показываем подсказку рядом с бутылкой
+        const bottleHint = this.add.text(img.x, img.y - 30, '↑', {
+          fontFamily: 'system-ui', fontSize: '16px', fontStyle: 'bold',
+          color: '#ffffff', backgroundColor: '#00000088', padding: { x: 4, y: 2 },
+        });
+        bottleHint.setOrigin(0.5).setDepth(200);
+        this.tweens.add({ targets: bottleHint, y: img.y - 35, duration: 500, yoyo: true, repeat: -1 });
+
+        // Отправляем запрос на подбор
+        img.setData('pickingUp', true);
+        img.setData('hintText', bottleHint);
         this.sendGameMessage({ type: 'pickup-bottle', bottleId: id });
+
+        // Показываем "Подбираю..." над головой персонажа
+        this.float('Подбираю...', this.player.x, this.player.y - 25, '#ffffff');
       }
     }
 
@@ -521,15 +549,36 @@ export class WorldScene extends Phaser.Scene {
     let targetX = this.player.x;
     let targetY = this.player.y;
 
-    // Check delivery house proximity
+    // Check delivery house proximity - проверяем ВСЕ дома на карте если есть посылка
     let nearDeliveryHouse = false;
     let deliveryDist = Infinity;
+    let deliveryTargetX = 0;
+    let deliveryTargetY = 0;
+
+    if (this.hasParcel && this.mapJson?.entities) {
+      const entities = Object.values(this.mapJson.entities);
+      for (const entity of entities) {
+        if (entity.type === 'apartment-1' || entity.type === 'apartment-2' || entity.type === 'building') {
+          const houseX = entity.cellX * TILE_SIZE + TILE_SIZE_HALF;
+          const houseY = entity.cellY * TILE_SIZE + TILE_SIZE_HALF;
+          const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, houseX, houseY);
+          if (dist < INTERACT_RADIUS && dist < deliveryDist) {
+            deliveryDist = dist;
+            nearDeliveryHouse = true;
+            deliveryTargetX = houseX;
+            deliveryTargetY = houseY;
+          }
+        }
+      }
+    }
+
+    // Также проверяем активную delivery цель (если назначена)
     if (this.activeDeliveryTarget) {
-      deliveryDist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.activeDeliveryTarget.x, this.activeDeliveryTarget.y);
-      if (deliveryDist < INTERACT_RADIUS) {
+      const targetDist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.activeDeliveryTarget.x, this.activeDeliveryTarget.y);
+      if (targetDist < INTERACT_RADIUS) {
         nearDeliveryHouse = true;
-        targetX = this.activeDeliveryTarget.x;
-        targetY = this.activeDeliveryTarget.y - 20;
+        deliveryTargetX = this.activeDeliveryTarget.x;
+        deliveryTargetY = this.activeDeliveryTarget.y;
       }
     }
 
@@ -562,21 +611,24 @@ export class WorldScene extends Phaser.Scene {
     const nearAnyWorldInteraction = this.nearKioskId || this.nearFoodCartEntity || this.nearClothingShopEntity || this.nearJobEntity || this.nearPropertyEntity || this.nearSchoolEntity;
     const nearPlayer = this.nearPlayerId !== null;
 
-    if (nearAnyWorldInteraction || nearPlayer) {
-      if (!nearDeliveryHouse || !this.hasParcel) {
-        this.usePrompt.setPosition(targetX, targetY - PROMPT_OFFSET_Y);
-      }
+    // Показываем подсказку для доставки если есть посылка и рядом дом
+    if (nearDeliveryHouse && this.hasParcel) {
+      this.usePrompt.setPosition(deliveryTargetX, deliveryTargetY - PROMPT_OFFSET_Y);
+      this.usePrompt.setText('[E] Отдать посылку');
+      this.usePrompt.setVisible(true);
+    } else if (nearAnyWorldInteraction || nearPlayer) {
+      this.usePrompt.setPosition(targetX, targetY - PROMPT_OFFSET_Y);
       this.usePrompt.setText(this.interactionPrompt());
       this.usePrompt.setVisible(true);
+    }
 
-      if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
-        if (nearDeliveryHouse && this.hasParcel && this.activeDeliveryTarget) { this.deliverParcel(); }
-        else if (this.nearSchoolEntity) this.openSchool();
-        else if (this.nearJobEntity) this.completeNearbyJob();
-        else if (this.nearPropertyEntity) this.buyNearbyProperty();
-        else if (nearPlayer && !nearAnyWorldInteraction) this.showPlayerInteractionMenu();
-        else this.toggleInventory(true);
-      }
+    if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
+      if (nearDeliveryHouse && this.hasParcel) { this.deliverParcel(); }
+      else if (this.nearSchoolEntity) this.openSchool();
+      else if (this.nearJobEntity) this.completeNearbyJob();
+      else if (this.nearPropertyEntity) this.buyNearbyProperty();
+      else if (nearPlayer && !nearAnyWorldInteraction) this.showPlayerInteractionMenu();
+      else this.toggleInventory(true);
     } else {
       this.usePrompt.setVisible(false);
       this.playerMenu.hide();
@@ -628,7 +680,7 @@ export class WorldScene extends Phaser.Scene {
     const jobType = this.nearJobEntity ? this.jobTypeForEntity(this.nearJobEntity) : null;
     if (jobType === 'courier') {
       if (!this.licenses.courier) return '[E] Нужно образование курьера — иди в школу';
-      if (this.hasParcel && this.activeDeliveryTarget) return '[E] Отнести посылку в дом';
+      if (this.hasParcel) return '[E] Отдать посылку в ближайший дом';
       return '[E] Взять посылку (курьер)';
     }
     if (jobType === 'lemonade') return this.licenses.lemonadeBusiness ? '[E] Продавать лимонад' : '[E] Нужно образование — иди в школу';
@@ -714,7 +766,7 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private deliverParcel(): void {
-    if (!this.hasParcel || !this.activeDeliveryTarget) return;
+    if (!this.hasParcel) return;
     const slotIdx = this.localInventory.findIndex(i => i === 'parcel');
     if (slotIdx === -1) return;
 
@@ -783,8 +835,16 @@ export class WorldScene extends Phaser.Scene {
   private initiateTrade(): void {
     if (!this.nearPlayerId) return;
     this.playerMenu.hide();
+    // Запоминаем координаты цели для проверки расстояния при отправке обмена
+    const targetSprite = this.remotes.sprites.get(this.nearPlayerId);
+    const targetX = targetSprite?.x ?? 0;
+    const targetY = targetSprite?.y ?? 0;
+    
     this.float('Открой инвентарь и выбери предмет для обмена', this.player.x, this.player.y - 30, '#4aa8c8');
     this.tradeTargetId = this.nearPlayerId;
+    
+    // Сохраняем координаты цели для проверки расстояния
+    this.tradeTargetCoords = { x: targetX, y: targetY };
     this.toggleInventory(true);
   }
 
@@ -800,11 +860,23 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private handleTradeClick(slotIdx: number): void {
-    if (!this.tradeTargetId) return;
+    if (!this.tradeTargetId || !this.tradeTargetCoords) return;
+    
+    // Проверяем что игрок всё ещё рядом
+    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.tradeTargetCoords.x, this.tradeTargetCoords.y);
+    if (dist > INTERACT_RADIUS) {
+      this.float('Игрок слишком далеко! Подойди ближе.', this.player.x, this.player.y - 20, '#ff6b6b');
+      this.tradeTargetId = null;
+      this.tradeTargetCoords = null;
+      return;
+    }
+    
     const item = this.localInventory[slotIdx];
     if (!item) return;
+    
     this.sendGameMessage({ type: 'player-interaction', action: 'trade-offer', targetId: this.tradeTargetId, slotIndex: slotIdx, itemType: item });
     this.tradeTargetId = null;
+    this.tradeTargetCoords = null;
     this.float('Предложение обмена отправлено!', this.player.x, this.player.y - 30, '#4aa8c8');
   }
 
@@ -1013,14 +1085,43 @@ export class WorldScene extends Phaser.Scene {
     const img = this.add.image(b.x, b.y, def.spriteKey);
     img.setScale(PLAYER_SCALE).setDepth(100);
     this.tweens.add({ targets: img, y: b.y - 4, duration: 1200 + Math.random() * 400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+
+    // Показываем вес бутылки над ней для реалистичности
+    const weightText = this.add.text(b.x, b.y - 25, `${def.weight.toFixed(1)}кг`, {
+      fontFamily: 'system-ui, monospace',
+      fontSize: '11px',
+      color: '#ffcc00',
+      backgroundColor: '#00000088',
+      padding: { x: 3, y: 1 },
+    });
+    weightText.setOrigin(0.5).setDepth(101);
+    img.setData('weightText', weightText);
+
     this.bottlesMap.set(b.id, img);
   }
 
   private removeBottleClient(id: string): void {
     const img = this.bottlesMap.get(id);
     if (!img) return;
+    // Удаляем подсказку и текст веса если есть
+    const hint = img.getData('hintText') as Phaser.GameObjects.Text | undefined;
+    if (hint) hint.destroy();
+    const weightText = img.getData('weightText') as Phaser.GameObjects.Text | undefined;
+    if (weightText) weightText.destroy();
+    img.setData('pickingUp', false);
     this.tweens.add({ targets: img, scale: 0.05, alpha: 0, angle: 180, duration: 200, onComplete: () => img.destroy() });
     this.bottlesMap.delete(id);
+  }
+
+  /** Разблокирует бутылку после неудачной попытки подбора, чтобы игрок мог попробовать снова */
+  private unlockBottle(bottleId: string): void {
+    const img = this.bottlesMap.get(bottleId);
+    if (!img) return;
+    img.setData('pickingUp', false);
+    img.setVisible(true);
+    // Удаляем старую подсказку (подсказка подбора)
+    const hint = img.getData('hintText') as Phaser.GameObjects.Text | undefined;
+    if (hint) hint.destroy();
   }
 
   // ============================================================
