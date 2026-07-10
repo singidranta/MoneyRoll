@@ -97,104 +97,176 @@ export class JobMinigameUI {
     root.addEventListener('click', (e) => { if (e.target === root) { this.destroy(); onClose(); } });
   }
 
-  // --- TRASH SORT MINIGAME ---
+  // --- TRASH SORT MINIGAME v2 with pictures ---
   showTrashSort(onFinish: JobStartCallback, onClose: () => void): void {
     this.destroy();
-    const items = [...TRASH_SORT_ITEMS].sort(()=>Math.random()-0.5).slice(0,8);
+    // Берём 3 предмета из каждой из 4 категорий = 12 предметов
+    const items = [...TRASH_SORT_ITEMS].sort(()=>Math.random()-0.5);
+    
     const root = document.createElement('div');
     root.id = 'trash-minigame';
     root.style.cssText = `position:fixed;inset:0;background:rgba(5,7,10,0.9);z-index:5000;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;`;
     root.innerHTML = `
-      <div style="background:#11161f;border:1px solid #2d3440;border-radius:18px;width:min(980px,96vw);color:#e8eaed;overflow:hidden">
+      <div style="background:#11161f;border:2px solid #2d3440;border-radius:18px;width:min(920px,96vw);color:#e8eaed;overflow:hidden">
         <div style="padding:16px 20px;border-bottom:1px solid #2d3440;display:flex;justify-content:space-between;align-items:center">
           <div>
             <div style="display:flex;align-items:center;gap:8px;">
-              <img src="/assets/icons/trash-sort.webp" width="24" height="24" alt="" />
-              <b>Сортировка мусора</b>
+              <img src="/assets/icons/trash-sort.png" width="28" height="28" alt="" style="filter:brightness(0) invert(1);" />
+              <b style="font-size:18px">Сортировка мусора</b>
             </div>
-            <div style="font-size:12px;color:#9aa3b2">Перетащи предметы в правильные контейнеры.</div>
+            <div style="font-size:12px;color:#9aa3b2;margin-top:4px">Перетащи предмет в правильный контейнер по картинке</div>
           </div>
-          <div><span id="ts-timer" style="font-weight:800;font-size:20px;color:#7cfc00">25</span><span style="color:#888"> сек</span></div>
+          <div style="text-align:center">
+            <span id="ts-timer" style="font-weight:800;font-size:28px;color:#7cfc00">30</span>
+            <div style="font-size:11px;color:#888">сек</div>
+          </div>
         </div>
+        <!-- Контейнеры для сортировки -->
+        <div style="padding:14px 20px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px;border-bottom:1px solid #2d3440">
+          ${TRASH_FRACTIONS.map(fr => `
+            <div class="ts-bin" data-fraction="${fr.id}" style="border:3px solid ${fr.color};border-radius:14px;padding:12px;min-height:80px;background:#0d121c;text-align:center;transition:.15s;cursor:default">
+              <img src="${fr.iconPath}" width="40" height="40" alt="" style="margin-bottom:6px;filter:drop-shadow(0 0 4px ${fr.color})" />
+              <div style="font-weight:700;color:${fr.color};font-size:14px">${fr.name}</div>
+              <div class="bin-count" style="font-size:11px;color:#8190a8;margin-top:4px">0 шт</div>
+            </div>
+          `).join('')}
+        </div>
+        <!-- Предметы для сортировки -->
         <div style="padding:16px 20px">
-          <div id="ts-items" style="display:flex;flex-wrap:wrap;gap:10px;min-height:90px;margin-bottom:16px;background:#0b0f17;border-radius:12px;padding:12px;border:1px dashed #2b3444"></div>
-          <div id="ts-bins" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px"></div>
+          <div id="ts-items" style="display:flex;flex-wrap:wrap;gap:8px;min-height:70px;background:#0b0f17;border-radius:12px;padding:14px;border:2px dashed #2b3444"></div>
           <div style="display:flex;justify-content:space-between;margin-top:14px;font-size:13px;color:#aab2c0">
             <span id="ts-progress">0 / ${items.length} отсортировано</span>
             <span id="ts-accuracy">Точность: 100%</span>
           </div>
         </div>
-        <div style="padding:12px 20px;border-top:1px solid #2d3440;text-align:right">
-          <button id="ts-finish" style="background:#238636;color:#fff;border:none;padding:10px 18px;border-radius:10px;font-weight:700;cursor:pointer">Сдать смену [Enter]</button>
+        <div style="padding:12px 20px;border-top:1px solid #2d3440;display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:12px;color:#7a8599">Используй drag & drop или клик на предмет → клик на контейнер</div>
+          <button id="ts-finish" style="background:#238636;color:#fff;border:none;padding:10px 20px;border-radius:10px;font-weight:700;cursor:pointer;font-size:14px">Сдать смену [Enter]</button>
         </div>
       </div>`;
     document.body.appendChild(root);
     this.root = root;
 
     const itemsEl = root.querySelector('#ts-items') as HTMLElement;
-    const binsEl = root.querySelector('#ts-bins') as HTMLElement;
+    const bins = root.querySelectorAll('.ts-bin') as NodeListOf<HTMLElement>;
     let correct = 0, totalSorted = 0, errors = 0;
-    const timeLimit = 25;
+    const timeLimit = 30;
     let timeLeft = timeLimit;
     const timerEl = root.querySelector('#ts-timer') as HTMLElement;
-
+    
+    // Создаём предметы с картинками
     items.forEach((it, idx) => {
       const d = document.createElement('div');
       d.draggable = true;
       d.dataset.fraction = it.fraction;
       d.dataset.idx = String(idx);
-      d.style.cssText = 'background:#1b2333;border:1px solid #334055;padding:10px 12px;border-radius:10px;cursor:grab;user-select:none;display:flex;align-items:center;gap:8px;font-size:14px';
-      d.innerHTML = `<img src="/assets/props/flat/trash/${it.icon}.svg" width="24" height="24" alt="" style="object-fit:contain;" /><span>${it.name}</span>`;
-      d.addEventListener('dragstart', e => { e.dataTransfer?.setData('text/plain', it.fraction + '|' + idx); });
+      d.style.cssText = 'background:#1b2333;border:2px solid #334055;padding:8px 12px;border-radius:12px;cursor:grab;user-select:none;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;min-width:72px;transition:.15s';
+      d.innerHTML = `
+        <img src="${it.iconPath}" width="36" height="36" alt="${it.name}" style="object-fit:contain;filter:brightness(0) invert(1);" />
+        <span style="color:#c8d0dc;text-align:center;line-height:1.2">${it.name}</span>`;
+      
+      // Drag & Drop
+      d.addEventListener('dragstart', e => { 
+        e.dataTransfer?.setData('text/plain', it.fraction + '|' + idx); 
+        d.style.opacity = '0.5';
+      });
+      d.addEventListener('dragend', () => { d.style.opacity = '1'; });
+      
+      // Click to select
+      d.addEventListener('click', () => {
+        if (d.style.opacity === '0.35') return;
+        // Снимаем выделение с других
+        itemsEl.querySelectorAll('[data-selected="true"]').forEach(el => (el as HTMLElement).style.border = '2px solid #334055');
+        itemsEl.querySelectorAll('[data-selected="true"]').forEach(el => delete (el as HTMLElement).dataset.selected);
+        d.style.border = '2px solid #ffd700';
+        d.dataset.selected = 'true';
+      });
+      
       itemsEl.appendChild(d);
     });
 
-    TRASH_FRACTIONS.forEach(fr => {
-      const bin = document.createElement('div');
-      bin.dataset.fraction = fr.id;
-      bin.style.cssText = `border:2px dashed ${fr.color};border-radius:12px;padding:14px;min-height:90px;background:#0d121c;text-align:center;transition:.15s`;
-      bin.innerHTML = `<div style="font-size:28px;margin-bottom:4px;"><img src="/assets/icons/trash/${fr.icon}.svg" width="32" height="32" alt="" /></div><div style="font-weight:700;color:${fr.color}">${fr.name}</div><div class="bin-count" style="font-size:12px;color:#8190a8;margin-top:4px">0 шт</div>`;
-      bin.addEventListener('dragover', e => { e.preventDefault(); bin.style.background='#15202f'; });
-      bin.addEventListener('dragleave', () => bin.style.background='#0d121c');
+    // Настройка контейнеров
+    bins.forEach(bin => {
+      bin.addEventListener('dragover', e => { e.preventDefault(); bin.style.background = '#1a2535'; bin.style.transform = 'scale(1.02)'; });
+      bin.addEventListener('dragleave', () => { bin.style.background = '#0d121c'; bin.style.transform = 'scale(1)'; });
       bin.addEventListener('drop', e => {
-        e.preventDefault(); bin.style.background='#0d121c';
-        const data = e.dataTransfer?.getData('text/plain'); if(!data) return;
-        const [fraction, idxStr] = data.split('|');
-        const idx = parseInt(idxStr);
-        const el = itemsEl.querySelector(`[data-idx="${idx}"]`) as HTMLElement;
-        if (!el || el.style.opacity==='0.35') return;
-        totalSorted++;
-        const targetFraction = bin.dataset.fraction!;
-        const ok = fraction === targetFraction;
-        if (ok) correct++; else errors++;
-        el.style.opacity='0.35'; el.style.pointerEvents='none';
-        const countEl = bin.querySelector('.bin-count') as HTMLElement;
-        countEl.textContent = (parseInt(countEl.textContent||'0')+1) + ' шт';
-        updateStats();
-        if (totalSorted >= items.length) finish();
+        e.preventDefault(); 
+        bin.style.background = '#0d121c';
+        bin.style.transform = 'scale(1)';
+        const data = e.dataTransfer?.getData('text/plain'); 
+        if(!data) return;
+        handleSort(bin, data);
       });
-      binsEl.appendChild(bin);
+      // Click на контейнер если выбран предмет
+      bin.addEventListener('click', () => {
+        const selected = itemsEl.querySelector('[data-selected="true"]') as HTMLElement;
+        if (!selected) return;
+        const data = selected.dataset.fraction + '|' + selected.dataset.idx;
+        handleSort(bin, data);
+      });
     });
+
+    function handleSort(bin: HTMLElement, data: string) {
+      const [fraction, idxStr] = data.split('|');
+      const idx = parseInt(idxStr);
+      const el = itemsEl.querySelector(`[data-idx="${idx}"]`) as HTMLElement;
+      if (!el || el.style.opacity === '0.35') return;
+      
+      totalSorted++;
+      const targetFraction = bin.dataset.fraction!;
+      const ok = fraction === targetFraction;
+      if (ok) correct++; else errors++;
+      
+      el.style.opacity = '0.35';
+      el.style.pointerEvents = 'none';
+      el.style.border = '2px solid #22c55e';
+      el.removeAttribute('data-selected');
+      
+      const countEl = bin.querySelector('.bin-count') as HTMLElement;
+      countEl.textContent = (parseInt(countEl.textContent||'0')+1) + ' шт';
+      
+      updateStats();
+      
+      // Анимация успеха/ошибки
+      if (ok) {
+        bin.style.background = '#0a2015';
+        setTimeout(() => { if (bin) bin.style.background = '#0d121c'; }, 300);
+      } else {
+        bin.style.background = '#201510';
+        setTimeout(() => { if (bin) bin.style.background = '#0d121c'; }, 300);
+      }
+      
+      if (totalSorted >= items.length) finish();
+    }
 
     const updateStats = () => {
       (root.querySelector('#ts-progress') as HTMLElement).textContent = `${totalSorted} / ${items.length} отсортировано`;
       const acc = totalSorted ? Math.round((correct/totalSorted)*100) : 100;
       (root.querySelector('#ts-accuracy') as HTMLElement).textContent = `Точность: ${acc}%`;
+      timerEl.style.color = acc < 70 ? '#ff6b6b' : acc < 90 ? '#facc15' : '#7cfc00';
     };
 
-    const timer = setInterval(()=> { timeLeft--; timerEl.textContent = String(timeLeft); timerEl.style.color = timeLeft<8 ? '#ff6b6b' : '#7cfc00'; if (timeLeft<=0) finish(); },1000);
+    const timer = setInterval(()=> { 
+      timeLeft--; 
+      timerEl.textContent = String(timeLeft); 
+      if (timeLeft < 10) timerEl.style.color = '#ff6b6b';
+      if (timeLeft <= 0) finish(); 
+    },1000);
 
     const finish = () => {
       clearInterval(timer);
       const accuracy = totalSorted ? Math.round((correct/totalSorted)*100) : 0;
-      const speedBonus = Math.max(0, timeLeft) * 1.5;
-      const score = Math.min(100, Math.round(accuracy*0.85 + speedBonus));
+      const speedBonus = Math.max(0, timeLeft) * 1.2;
+      const score = Math.min(100, Math.round(accuracy * 0.85 + speedBonus));
       this.destroy();
       onFinish(score, { correct, total: totalSorted, errors });
     };
 
     root.querySelector('#ts-finish')?.addEventListener('click', finish);
-    const keyHandler = (e: KeyboardEvent) => { if(e.key==='Enter'){ document.removeEventListener('keydown', keyHandler); finish(); } if(e.key==='Escape'){ clearInterval(timer); this.destroy(); onClose(); } };
+    const keyHandler = (e: KeyboardEvent) => { 
+      if(e.key==='Enter') { document.removeEventListener('keydown', keyHandler); finish(); } 
+      if(e.key==='Escape') { clearInterval(timer); this.destroy(); onClose(); } 
+    };
     document.addEventListener('keydown', keyHandler);
   }
 

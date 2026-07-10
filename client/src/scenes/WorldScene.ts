@@ -142,6 +142,9 @@ export class WorldScene extends Phaser.Scene {
   private activeDeliveryTarget: { x: number; y: number; key: string } | null = null;
   private hasParcel = false;
   private deliveryHighlight?: Phaser.GameObjects.Graphics;
+  
+  // Trade state - координаты цели для проверки расстояния
+  private tradeTargetCoords: { x: number; y: number } | null = null;
 
   // UI
   private hud = new HudUI();
@@ -832,8 +835,16 @@ export class WorldScene extends Phaser.Scene {
   private initiateTrade(): void {
     if (!this.nearPlayerId) return;
     this.playerMenu.hide();
+    // Запоминаем координаты цели для проверки расстояния при отправке обмена
+    const targetSprite = this.remotes.sprites.get(this.nearPlayerId);
+    const targetX = targetSprite?.x ?? 0;
+    const targetY = targetSprite?.y ?? 0;
+    
     this.float('Открой инвентарь и выбери предмет для обмена', this.player.x, this.player.y - 30, '#4aa8c8');
     this.tradeTargetId = this.nearPlayerId;
+    
+    // Сохраняем координаты цели для проверки расстояния
+    this.tradeTargetCoords = { x: targetX, y: targetY };
     this.toggleInventory(true);
   }
 
@@ -849,11 +860,23 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private handleTradeClick(slotIdx: number): void {
-    if (!this.tradeTargetId) return;
+    if (!this.tradeTargetId || !this.tradeTargetCoords) return;
+    
+    // Проверяем что игрок всё ещё рядом
+    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.tradeTargetCoords.x, this.tradeTargetCoords.y);
+    if (dist > INTERACT_RADIUS) {
+      this.float('Игрок слишком далеко! Подойди ближе.', this.player.x, this.player.y - 20, '#ff6b6b');
+      this.tradeTargetId = null;
+      this.tradeTargetCoords = null;
+      return;
+    }
+    
     const item = this.localInventory[slotIdx];
     if (!item) return;
+    
     this.sendGameMessage({ type: 'player-interaction', action: 'trade-offer', targetId: this.tradeTargetId, slotIndex: slotIdx, itemType: item });
     this.tradeTargetId = null;
+    this.tradeTargetCoords = null;
     this.float('Предложение обмена отправлено!', this.player.x, this.player.y - 30, '#4aa8c8');
   }
 

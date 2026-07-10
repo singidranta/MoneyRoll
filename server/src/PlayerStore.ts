@@ -4,7 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { PlayerSave } from '../../shared/economy.js';
+import { DEFAULT_EQUIPMENT, type PlayerSave } from '../../shared/economy.js';
 import type { Client } from './types.js';
 
 const PLAYER_SAVE_PATH = path.resolve(process.cwd(), 'data/players.json');
@@ -25,6 +25,7 @@ export class PlayerStore {
       hasJacket: c.hasJacket,
       hasSneakers: c.hasSneakers,
       hasCrown: c.hasCrown,
+      equipment: c.equipment ?? { ...DEFAULT_EQUIPMENT },
       properties: c.properties,
       jobSkills: c.jobSkills,
       licenses: c.licenses,

@@ -13,6 +13,7 @@ import {
   PROPERTIES,
   DEFAULT_JOB_SKILLS,
   DEFAULT_LICENSES,
+  DEFAULT_EQUIPMENT,
   type BottleType,
   type InventoryItem,
   type JobType,
@@ -253,6 +254,7 @@ export class World {
       hasJacket: save?.hasJacket ?? false,
       hasSneakers: save?.hasSneakers ?? false,
       hasCrown: save?.hasCrown ?? false,
+      equipment: save?.equipment ?? { ...DEFAULT_EQUIPMENT },
       properties: save?.properties ?? [],
       lastJobAt: { courier: 0, lemonade: 0, 'trash-sort': 0 },
       playerToken,
@@ -322,6 +324,7 @@ export class World {
             c.hasJacket = save.hasJacket;
             c.hasSneakers = save.hasSneakers;
             c.hasCrown = save.hasCrown;
+            c.equipment = save.equipment ?? { ...DEFAULT_EQUIPMENT };
             c.properties = save.properties ?? [];
             if (save.jobSkills) c.jobSkills = { ...DEFAULT_JOB_SKILLS, ...save.jobSkills };
             if (save.licenses) c.licenses = { ...DEFAULT_LICENSES, ...save.licenses };
@@ -334,6 +337,7 @@ export class World {
         c.ws.send(JSON.stringify({
           type: 'welcome', id: fromId, money: c.money, inventory: c.inventory, backpackTier: c.backpackTier,
           hasJacket: c.hasJacket, hasSneakers: c.hasSneakers, hasCrown: c.hasCrown,
+          equipment: c.equipment,
           properties: c.properties, jobSkills: c.jobSkills, licenses: c.licenses,
           trainingCompleted: c.trainingCompleted, hunger: c.hunger,
           players: this.snapshot(fromId), bottles: this.getBottles(),
