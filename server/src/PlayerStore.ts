@@ -7,7 +7,7 @@ import * as path from 'path';
 import type { PlayerSave } from '../../shared/economy.js';
 import type { Client } from './types.js';
 
-const PLAYER_SAVE_PATH = path.resolve(process.cwd(), 'server/data/players.json');
+const PLAYER_SAVE_PATH = path.resolve(process.cwd(), 'data/players.json');
 
 export class PlayerStore {
   private saves = loadPlayerSaves();
@@ -29,6 +29,7 @@ export class PlayerStore {
       jobSkills: c.jobSkills,
       licenses: c.licenses,
       trainingCompleted: c.trainingCompleted,
+      hunger: c.hunger,
     };
     this.saves.set(c.playerToken, save);
     persistPlayerSaves(this.saves);

@@ -6,6 +6,7 @@ import type { WebSocket } from 'ws';
 import type {
   InventoryItem,
   JobType,
+  OwnedProperty,
   PropertyType,
 } from '../../shared/economy.js';
 
@@ -27,10 +28,9 @@ export type Client = {
   hasJacket: boolean;
   hasSneakers: boolean;
   hasCrown: boolean;
-  properties: PropertyType[];
+  properties: OwnedProperty[];
   lastJobAt: Record<JobType, number>;
   playerToken: string | null;
-  // v2 job system
   jobSkills: JobSkills;
   licenses: JobLicense;
   trainingCompleted: string[];
@@ -40,6 +40,7 @@ export type Client = {
     stage?: number;
     data?: any;
   } | null;
+  hunger: number;
 };
 
 export type PeerSnapshot = {
@@ -66,4 +67,13 @@ export type SchoolPoint = {
   id: string;
   x: number;
   y: number;
+};
+
+// Courier delivery house point
+export type DeliveryPoint = {
+  id: string;
+  x: number;
+  y: number;
+  cellX: number;
+  cellY: number;
 };

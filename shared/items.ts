@@ -1,14 +1,17 @@
 // ============================================================
 //  SECTION: SHARED ITEM HELPERS
 // ============================================================
-// Единые хелперы для клиента и сервера — без дублирования.
 
 import {
   BACKPACK_TIERS,
   BOTTLE_TYPES,
   FOOD_WEIGHTS,
+  FOOD_NAMES,
+  FOOD_WEBP_PATHS,
+  FOOD_SPRITES,
   GEAR_WEIGHTS,
   type BottleType,
+  type FoodType,
   type InventoryItem,
 } from './economy.js';
 
@@ -20,8 +23,8 @@ export function isBag(item: InventoryItem): item is 'bag-adidas' | 'backpack-tou
   return item === 'bag-adidas' || item === 'backpack-tourist';
 }
 
-export function isFood(item: InventoryItem): item is 'shawarma' | 'energy' {
-  return item === 'shawarma' || item === 'energy';
+export function isFood(item: InventoryItem): item is FoodType {
+  return item in FOOD_WEIGHTS;
 }
 
 export function isBottle(item: InventoryItem): item is BottleType {
@@ -35,8 +38,7 @@ export function isBottle(item: InventoryItem): item is BottleType {
 export function getItemName(item: InventoryItem): string {
   if (item === 'bag-adidas') return 'Сумка Adidas';
   if (item === 'backpack-tourist') return 'Рюкзак туриста';
-  if (item === 'shawarma') return 'Шаурма';
-  if (item === 'energy') return 'Ягуар';
+  if (isFood(item)) return FOOD_NAMES[item];
   if (item === 'parcel') return 'Посылка';
   return BOTTLE_TYPES[item as BottleType]?.name ?? item;
 }
@@ -56,7 +58,6 @@ export function calculateInventoryWeight(inv: readonly (InventoryItem | null)[])
   return parseFloat(total.toFixed(2));
 }
 
-/** Сколько слотов доступно при данном тире рюкзака. */
 export function getActiveSlotsCount(backpackTier: number): number {
   if (backpackTier === 1) return 4;
   if (backpackTier === 2) return 8;
@@ -74,18 +75,16 @@ export function getBackpackName(backpackTier: number): string {
 /** Путь к webp-иконке предмета (для HTML UI). */
 export function getItemWebpPath(item: InventoryItem): string {
   if (isBag(item)) return `/assets/props/flat/bags/${item}.webp`;
-  if (item === 'shawarma') return '/assets/props/flat/food/shawarma.webp';
-  if (item === 'energy') return '/assets/props/flat/food/energy-drink.webp';
-  if (item === 'parcel') return '/assets/props/flat/parcel.webp'; // fallback if no asset
+  if (isFood(item)) return FOOD_WEBP_PATHS[item];
+  if (item === 'parcel') return '/assets/props/flat/parcel.webp';
   return `/assets/props/flat/bottles/${item}.webp`;
 }
 
 /** Phaser texture key для дропнутого/спавненного предмета. */
 export function getItemSpriteKey(item: InventoryItem): string {
   if (isBag(item)) return item;
-  if (item === 'shawarma') return 'shawarma';
-  if (item === 'energy') return 'energy-drink';
-  if (item === 'parcel') return 'bottle-water'; // use any existing sprite as parcel placeholder
+  if (isFood(item)) return FOOD_SPRITES[item];
+  if (item === 'parcel') return 'bottle-water';
   return BOTTLE_TYPES[item as BottleType]?.spriteKey ?? 'bottle-water';
 }
 
