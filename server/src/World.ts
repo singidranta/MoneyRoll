@@ -14,6 +14,7 @@ import {
   DEFAULT_JOB_SKILLS,
   DEFAULT_LICENSES,
   DEFAULT_EQUIPMENT,
+  calculatePropertiesIncomePerMin,
   type BottleType,
   type InventoryItem,
   type JobType,
@@ -41,6 +42,7 @@ import {
   handleSellSlot,
   handleUnequipBag,
   handleUpgradeBackpack,
+  handleUpgradeProperty,
   handleUseItem,
   tickHunger,
   type EconomyContext,
@@ -52,7 +54,7 @@ import {
   type InteractionContext,
 } from './handlers/interactionHandlers.js';
 import { PlayerStore } from './PlayerStore.js';
-import type { Client, DeliveryPoint, JobPoint, PropertyPoint, SchoolPoint, WireMessage } from './types.js';
+import type { Client, DeliveryPoint, ElectronicsShopPoint, JobPoint, PropertyPoint, SchoolPoint, WireMessage } from './types.js';
 
 export type { WireMessage } from './types.js';
 
@@ -66,6 +68,7 @@ export class World {
   private jobPoints: JobPoint[] = [];
   private propertyPoints: PropertyPoint[] = [];
   private schoolPoints: SchoolPoint[] = [];
+  private electronicsShops: ElectronicsShopPoint[] = [];
   private deliveryHouses: DeliveryPoint[] = [];
   private spawnerIntervals: NodeJS.Timeout[] = [];
   private passiveIncomeTimer?: NodeJS.Timeout;
@@ -95,6 +98,7 @@ export class World {
     this.jobPoints = [];
     this.propertyPoints = [];
     this.schoolPoints = [];
+    this.electronicsShops = [];
     this.deliveryHouses = [];
 
     if (!map.entities) map.entities = {};
@@ -107,6 +111,8 @@ export class World {
         this.kiosks.push(entity);
       } else if (entityType === 'school') {
         this.schoolPoints.push({ id: entity.id, x: entity.cellX * TILE_SIZE + TILE_SIZE_HALF, y: entity.cellY * TILE_SIZE + TILE_SIZE_HALF });
+      } else if (entityType === 'electronics-shop') {
+        this.electronicsShops.push({ id: entity.id, x: entity.cellX * TILE_SIZE + TILE_SIZE_HALF, y: entity.cellY * TILE_SIZE + TILE_SIZE_HALF });
       } else if (entityType === 'apartment-1' || entityType === 'apartment-2' || entityType === 'building') {
         this.deliveryHouses.push({
           id: entity.id,
@@ -187,10 +193,7 @@ export class World {
   private tickPassiveIncome(): void {
     for (const c of this.clients.values()) {
       if (c.properties.length === 0) continue;
-      let incomePerMin = 0;
-      for (const p of c.properties) {
-        incomePerMin += PROPERTIES[p.type].incomePerMin;
-      }
+      const incomePerMin = calculatePropertiesIncomePerMin(c.properties);
       const gain = incomePerMin * 0.25;
       if (gain <= 0) continue;
       c.money = parseFloat((c.money + gain).toFixed(2));
@@ -254,8 +257,9 @@ export class World {
       hasJacket: save?.hasJacket ?? false,
       hasSneakers: save?.hasSneakers ?? false,
       hasCrown: save?.hasCrown ?? false,
+      hasPhone: save?.hasPhone ?? false,
       equipment: save?.equipment ?? { ...DEFAULT_EQUIPMENT },
-      properties: save?.properties ?? [],
+      properties: (save?.properties ?? []).map((property) => ({ ...property, level: property.level ?? 1 })),
       lastJobAt: { courier: 0, lemonade: 0, 'trash-sort': 0 },
       playerToken,
       jobSkills: save?.jobSkills ? { ...DEFAULT_JOB_SKILLS, ...save.jobSkills } : JSON.parse(JSON.stringify(DEFAULT_JOB_SKILLS)),
@@ -291,6 +295,7 @@ export class World {
       jobPoints: this.jobPoints,
       propertyPoints: this.propertyPoints,
       schoolPoints: this.schoolPoints,
+      electronicsShops: this.electronicsShops,
       deliveryHouses: this.deliveryHouses,
       saveClient: (c) => this.playerStore.saveClient(c),
       broadcastAll: (p) => this.broadcastAll(p),
@@ -324,8 +329,9 @@ export class World {
             c.hasJacket = save.hasJacket;
             c.hasSneakers = save.hasSneakers;
             c.hasCrown = save.hasCrown;
+            c.hasPhone = save.hasPhone ?? false;
             c.equipment = save.equipment ?? { ...DEFAULT_EQUIPMENT };
-            c.properties = save.properties ?? [];
+            c.properties = (save.properties ?? []).map((property) => ({ ...property, level: property.level ?? 1 }));
             if (save.jobSkills) c.jobSkills = { ...DEFAULT_JOB_SKILLS, ...save.jobSkills };
             if (save.licenses) c.licenses = { ...DEFAULT_LICENSES, ...save.licenses };
             c.trainingCompleted = save.trainingCompleted ?? [];
@@ -336,7 +342,7 @@ export class World {
         }
         c.ws.send(JSON.stringify({
           type: 'welcome', id: fromId, money: c.money, inventory: c.inventory, backpackTier: c.backpackTier,
-          hasJacket: c.hasJacket, hasSneakers: c.hasSneakers, hasCrown: c.hasCrown,
+          hasJacket: c.hasJacket, hasSneakers: c.hasSneakers, hasCrown: c.hasCrown, hasPhone: c.hasPhone,
           equipment: c.equipment,
           properties: c.properties, jobSkills: c.jobSkills, licenses: c.licenses,
           trainingCompleted: c.trainingCompleted, hunger: c.hunger,
@@ -362,6 +368,7 @@ export class World {
       case 'job-submit': handleJobComplete(c, msg, eco); break;
       case 'training-buy': handleTrainingBuy(c, msg, eco); break;
       case 'buy-property': handleBuyProperty(c, msg, eco); break;
+      case 'upgrade-property': handleUpgradeProperty(c, msg, eco); break;
       case 'upgrade-backpack': handleUpgradeBackpack(c, msg, eco); break;
       case 'buy-food':
         this.handle(fromId, { type: 'buy-shop-item', itemType: msg.itemType });

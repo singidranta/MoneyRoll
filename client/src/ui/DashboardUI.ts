@@ -2,7 +2,7 @@
 //  SECTION: DASHBOARD (shops + inventory panel)
 // ============================================================
 
-import { INVENTORY_SLOTS, type InventoryItem } from '../../../shared/economy';
+import { INVENTORY_SLOTS, SHOP_PRICES, type InventoryItem } from '../../../shared/economy';
 import {
   getActiveSlotsCount,
   getItemWebpPath,
@@ -37,6 +37,7 @@ export type DashboardCallbacks = {
   onSellAll: () => void;
   onBuyItem: (itemKey: string, cost: number) => void;
   onBuyClothing: (type: 'jacket' | 'sneakers' | 'crown', cost: number) => void;
+  onBuyPhone: (cost: number) => void;
   onUnequipBag: () => void;
   onUseSlot: (slotIdx: number, item: InventoryItem) => void;
   onDropSlot: (slotIdx: number) => void;
@@ -51,6 +52,8 @@ export type DashboardContext = {
   nearKiosk: boolean;
   nearFoodCart: boolean;
   nearClothingShop: boolean;
+  nearElectronicsShop: boolean;
+  hasPhone: boolean;
   inventory: (InventoryItem | null)[];
   backpackTier: number;
   equippedBag: 'bag-adidas' | 'backpack-tourist' | null;
@@ -84,6 +87,8 @@ export class DashboardUI {
       dashboard.appendChild(this.createFoodPanel(cb));
     } else if (ctx.nearClothingShop) {
       dashboard.appendChild(this.createClothingPanel(cb));
+    } else if (ctx.nearElectronicsShop) {
+      dashboard.appendChild(this.createElectronicsPanel(ctx, cb));
     }
 
     const inventoryPanel = this.createInventoryPanel(cb);
@@ -237,6 +242,30 @@ export class DashboardUI {
     panel.querySelector('#btn-buy-jacket')?.addEventListener('click', () => cb.onBuyClothing('jacket', 10.0));
     panel.querySelector('#btn-buy-sneakers')?.addEventListener('click', () => cb.onBuyClothing('sneakers', 20.0));
     panel.querySelector('#btn-buy-crown')?.addEventListener('click', () => cb.onBuyClothing('crown', 100.0));
+    panel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => cb.onClose());
+    return panel;
+  }
+
+  private createElectronicsPanel(ctx: DashboardContext, cb: DashboardCallbacks): HTMLDivElement {
+    const phoneCost = SHOP_PRICES.phone;
+    const panel = document.createElement('div');
+    panel.className = 'dashboard-panel electronics shop-panel-large';
+    panel.innerHTML = `
+      <h3><img src="/assets/props/flat/buildings/electronics-shop.svg" alt="" />Магазин электроники</h3>
+      <p>Телефон открывает отдельную кнопку рядом с инвентарём. В телефоне видно доход от всех купленных бизнесов и прокачку до 15 уровня.</p>
+      <div class="shop-grid">
+        <div class="shop-card ${ctx.hasPhone ? 'shop-card-disabled' : ''}" id="btn-buy-phone">
+          <div class="shop-card-img"><img src="/assets/icons/phone.svg" alt="Телефон" /></div>
+          <div class="shop-card-info">
+            <span class="shop-card-name">Смартфон MoneyRoll</span>
+            <span class="shop-card-desc">Кнопка телефона + отчёт доходов бизнеса</span>
+          </div>
+          <div class="shop-card-price">${ctx.hasPhone ? 'Куплено' : `$${phoneCost.toFixed(2)}`}</div>
+        </div>
+      </div>
+      <button id="btn-close-dashboard" class="dash-btn dash-btn-danger">Закрыть</button>
+    `;
+    if (!ctx.hasPhone) panel.querySelector('#btn-buy-phone')?.addEventListener('click', () => cb.onBuyPhone(phoneCost));
     panel.querySelector('#btn-close-dashboard')?.addEventListener('click', () => cb.onClose());
     return panel;
   }

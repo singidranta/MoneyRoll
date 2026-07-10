@@ -46,6 +46,7 @@ export const MAP_ENTITY_TYPES = [
   'wall',
   'food-cart',
   'clothing-shop',
+  'electronics-shop',
   'property',
   'school',
   'courier-hub',

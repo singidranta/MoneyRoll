@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#263241"/>
+      <stop offset="1" stop-color="#151b24"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#58d5ff"/>
+      <stop offset="1" stop-color="#1e7bb0"/>
+    </linearGradient>
+  </defs>
+  <rect x="13" y="28" width="102" height="86" rx="7" fill="url(#wall)" stroke="#0a0d12" stroke-width="5"/>
+  <rect x="18" y="18" width="92" height="24" rx="5" fill="#111827" stroke="#38bdf8" stroke-width="3"/>
+  <text x="64" y="35" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" font-weight="800" fill="#e0f2fe">ELECTRO</text>
+  <rect x="24" y="50" width="33" height="28" rx="4" fill="url(#glass)" stroke="#0f172a" stroke-width="3"/>
+  <rect x="71" y="50" width="33" height="28" rx="4" fill="url(#glass)" stroke="#0f172a" stroke-width="3"/>
+  <rect x="51" y="82" width="26" height="32" rx="4" fill="#0f172a" stroke="#38bdf8" stroke-width="3"/>
+  <rect x="56" y="87" width="16" height="21" rx="2" fill="#020617"/>
+  <circle cx="64" cy="111" r="2" fill="#38bdf8"/>
+  <path d="M33 64h15M80 64h15" stroke="#e0f2fe" stroke-width="3" stroke-linecap="round" opacity="0.9"/>
+  <path d="M44 90c10-9 30-9 40 0" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round"/>
+</svg>

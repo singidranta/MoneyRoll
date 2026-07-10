@@ -29,6 +29,7 @@ export type Client = {
   hasJacket: boolean;
   hasSneakers: boolean;
   hasCrown: boolean;
+  hasPhone: boolean;
   equipment: PlayerEquipment;  // Экипировка для визуального отображения
   properties: OwnedProperty[];
   lastJobAt: Record<JobType, number>;
@@ -66,6 +67,12 @@ export type PropertyPoint = {
 };
 
 export type SchoolPoint = {
+  id: string;
+  x: number;
+  y: number;
+};
+
+export type ElectronicsShopPoint = {
   id: string;
   x: number;
   y: number;

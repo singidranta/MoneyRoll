@@ -15,12 +15,13 @@ export type HudState = {
   shawarmaBuffTimer: number;
   remoteCount: number;
   hunger: number;
+  hasPhone: boolean;
 };
 
 export class HudUI {
   private root?: HTMLDivElement;
 
-  create(onToggleInventory: () => void): void {
+  create(onToggleInventory: () => void, onTogglePhone: () => void): void {
     this.destroy();
 
     const hud = document.createElement('div');
@@ -60,6 +61,13 @@ export class HudUI {
     btnBackpack.innerHTML = '<img src="/assets/props/flat/bags/backpack-tourist.webp" alt="Инвентарь" width="28" height="28" />';
     btnBackpack.addEventListener('click', () => onToggleInventory());
     hud.appendChild(btnBackpack);
+
+    const btnPhone = document.createElement('button');
+    btnPhone.id = 'btn-toggle-phone';
+    btnPhone.title = 'Телефон: доход от бизнесов';
+    btnPhone.innerHTML = '<img src="/assets/icons/phone.svg" alt="Телефон" width="30" height="30" />';
+    btnPhone.addEventListener('click', () => onTogglePhone());
+    hud.appendChild(btnPhone);
   }
 
   update(state: HudState): void {
@@ -69,6 +77,9 @@ export class HudUI {
 
     const moneyVal = this.root.querySelector('#hud-money-val');
     if (moneyVal) moneyVal.textContent = state.money.toFixed(2);
+
+    const phoneBtn = this.root.querySelector('#btn-toggle-phone') as HTMLButtonElement | null;
+    if (phoneBtn) phoneBtn.style.display = state.hasPhone ? 'flex' : 'none';
 
     const weightEl = this.root.querySelector('#hud-weight');
     if (weightEl) weightEl.textContent = `${bagName} - ${state.currentWeight.toFixed(1)} / ${maxLimit} кг`;

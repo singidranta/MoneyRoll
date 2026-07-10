@@ -63,7 +63,9 @@ export type BottleType = 'water' | 'beer-glass' | 'wine' | 'champagne' | 'bordea
 
 export type ClothingType = 'jacket' | 'sneakers' | 'crown';
 
-export type ShopItemType = InventoryItem | ClothingType;
+export type ElectronicsItem = 'phone';
+
+export type ShopItemType = InventoryItem | ClothingType | ElectronicsItem;
 
 // ============================================================
 //  SECTION: BOTTLE DEFINITIONS
@@ -238,6 +240,7 @@ export const SHOP_PRICES: Record<ShopItemType, number> = {
   jacket: 10.0,
   sneakers: 20.0,
   crown: 100.0,
+  phone: 85.0,
   water: 0,
   'beer-glass': 0,
   wine: 0,
@@ -449,6 +452,34 @@ export const PROPERTIES: Record<PropertyType, PropertyDef> = {
   },
 };
 
+export const PROPERTY_MAX_LEVEL = 15;
+
+export function getPropertyLevel(property: Pick<OwnedProperty, 'level'>): number {
+  return Math.max(1, Math.min(PROPERTY_MAX_LEVEL, property.level ?? 1));
+}
+
+export function getPropertyIncomePerMin(property: Pick<OwnedProperty, 'type' | 'level'>): number {
+  const def = PROPERTIES[property.type];
+  if (!def) return 0;
+  const level = getPropertyLevel(property);
+  const income = def.incomePerMin * (1 + (level - 1) * 0.22);
+  return parseFloat(income.toFixed(2));
+}
+
+export function getPropertyUpgradeCost(property: Pick<OwnedProperty, 'type' | 'level'>): number {
+  const def = PROPERTIES[property.type];
+  if (!def) return 0;
+  const level = getPropertyLevel(property);
+  if (level >= PROPERTY_MAX_LEVEL) return 0;
+  const cost = def.price * (0.45 + level * 0.18);
+  return Math.ceil(cost);
+}
+
+export function calculatePropertiesIncomePerMin(properties: readonly Pick<OwnedProperty, 'type' | 'level'>[]): number {
+  const total = properties.reduce((sum, property) => sum + getPropertyIncomePerMin(property), 0);
+  return parseFloat(total.toFixed(2));
+}
+
 // ============================================================
 //  SECTION: HUNGER SYSTEM
 // ============================================================
@@ -479,11 +510,13 @@ export const DEFAULT_LICENSES: JobLicense = {
   lemonadeBusiness: false,
 };
 
-// v2 property ownership — with unique IDs so you can buy multiple of the same type
+// v3 business ownership — one purchase per map point, with upgrades up to PROPERTY_MAX_LEVEL
 export interface OwnedProperty {
-  id: string;       // unique ID for this purchase
+  id: string;       // unique ownership ID (new saves use the map point ID)
   type: PropertyType;
   boughtAt: number; // timestamp
+  level: number;
+  propertyPointId?: string; // map entity ID. If present, this exact place can be bought only once.
 }
 
 // Система экипировки - 4 слота для отображения одежды на игроке
@@ -508,6 +541,7 @@ export interface PlayerSave {
   hasJacket: boolean;
   hasSneakers: boolean;
   hasCrown: boolean;
+  hasPhone?: boolean;
   equipment: PlayerEquipment;  // Экипировка для отображения
   properties: OwnedProperty[];
   jobSkills?: JobSkills;

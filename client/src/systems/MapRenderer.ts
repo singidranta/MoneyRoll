@@ -71,6 +71,9 @@ export class MapRenderer {
         case 'clothing-shop':
           this.renderClothingShop(entity, px, py);
           break;
+        case 'electronics-shop':
+          this.renderElectronicsShop(entity, px, py);
+          break;
         case 'school':
           this.renderBuildingSprite(entity, px, py, 'school', 1.0);
           break;
@@ -117,6 +120,14 @@ export class MapRenderer {
 
   private renderClothingShop(entity: MapEntity, px: number, py: number): void {
     const sprite = this.scene.add.image(px, py, 'clothing-shop');
+    sprite.setScale(OBSTACLE_SCALE);
+    sprite.setDepth(100);
+    sprite.setAngle(entity.rotation);
+    this.kioskSprites.set(entity.id, sprite);
+  }
+
+  private renderElectronicsShop(entity: MapEntity, px: number, py: number): void {
+    const sprite = this.scene.add.image(px, py, 'electronics-shop');
     sprite.setScale(OBSTACLE_SCALE);
     sprite.setDepth(100);
     sprite.setAngle(entity.rotation);
