@@ -202,6 +202,7 @@ wss.on('connection', (ws, req) => {
     hasJacket: playerClient?.hasJacket ?? false,
     hasSneakers: playerClient?.hasSneakers ?? false,
     hasCrown: playerClient?.hasCrown ?? false,
+    hasPhone: playerClient?.hasPhone ?? false,
     properties: playerClient?.properties ?? [],
   }));
 

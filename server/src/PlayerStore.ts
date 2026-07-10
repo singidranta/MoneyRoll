@@ -25,6 +25,7 @@ export class PlayerStore {
       hasJacket: c.hasJacket,
       hasSneakers: c.hasSneakers,
       hasCrown: c.hasCrown,
+      hasPhone: c.hasPhone,
       equipment: c.equipment ?? { ...DEFAULT_EQUIPMENT },
       properties: c.properties,
       jobSkills: c.jobSkills,

@@ -11,6 +11,9 @@ import {
   PROPERTIES,
   DEFAULT_JOB_SKILLS,
   DEFAULT_LICENSES,
+  PROPERTY_MAX_LEVEL,
+  getPropertyIncomePerMin,
+  getPropertyUpgradeCost,
   type FoodType,
   type InventoryItem,
   type JobType,
@@ -68,6 +71,7 @@ import { DragDropController } from '../ui/DragDrop';
 import { showFloatingText } from '../ui/FloatingText';
 import { HudUI } from '../ui/HudUI';
 import { JobMinigameUI } from '../ui/JobMinigameUI';
+import { PhoneUI } from '../ui/PhoneUI';
 import {
   PlayerInteractionUI,
   removeAllTradePopups,
@@ -96,6 +100,7 @@ export class WorldScene extends Phaser.Scene {
   private backpackTier = 1;
   private hasJacket = false;
   private hasSneakers = false;
+  private hasPhone = false;
   private equippedBag: 'bag-adidas' | 'backpack-tourist' | null = null;
   private stamina = STAMINA_MAX;
   private isExhausted = false;
@@ -113,8 +118,8 @@ export class WorldScene extends Phaser.Scene {
   private lastSentAt = 0;
   private myId: string | null = null;
   private simulatedLagMs = 0;
-  private remotes = new RemotePlayers(this);
-  private mapRenderer = new MapRenderer(this);
+  private remotes!: RemotePlayers;
+  private mapRenderer!: MapRenderer;
   private mapJson: MapDocument | null = null;
   private bottlesMap = new Map<string, Phaser.GameObjects.Image>();
   private groundTileSprite?: Phaser.GameObjects.TileSprite;
@@ -123,6 +128,7 @@ export class WorldScene extends Phaser.Scene {
   private nearKioskId: string | null = null;
   private nearFoodCartEntity: MapEntity | null = null;
   private nearClothingShopEntity: MapEntity | null = null;
+  private nearElectronicsShopEntity: MapEntity | null = null;
   private nearJobEntity: MapEntity | null = null;
   private nearPropertyEntity: MapEntity | null = null;
   private nearPlayerId: string | null = null;
@@ -149,6 +155,7 @@ export class WorldScene extends Phaser.Scene {
   // UI
   private hud = new HudUI();
   private dashboard = new DashboardUI();
+  private phoneUI = new PhoneUI();
   private playerMenu = new PlayerInteractionUI();
   private dragDrop = new DragDropController();
   private jobUI = new JobMinigameUI();
@@ -156,6 +163,11 @@ export class WorldScene extends Phaser.Scene {
   constructor() { super({ key: 'World' }); }
 
   create(): void {
+    // Важно: Phaser-системы (anims/physics/add) доступны только после старта сцены.
+    // Поэтому RemotePlayers и MapRenderer создаём здесь, а не в initializer класса.
+    this.remotes = new RemotePlayers(this);
+    this.mapRenderer = new MapRenderer(this);
+
     const kb = this.input.keyboard;
     if (!kb) { console.error('[MoneyRoll] клавиатура недоступна'); return; }
 
@@ -202,7 +214,7 @@ export class WorldScene extends Phaser.Scene {
     });
 
     kb.on('keydown-L', () => this.cycleSimulatedLag());
-    this.hud.create(() => this.toggleInventory());
+    this.hud.create(() => this.toggleInventory(), () => this.togglePhone());
     this.loadGame();
     void this.loadMapData();
     console.log('[MoneyRoll] World ready. I — инвентарь, E — взаимодействие, L — пинг');
@@ -259,7 +271,8 @@ export class WorldScene extends Phaser.Scene {
         this.backpackTier = typeof msg.backpackTier === 'number' ? msg.backpackTier : 1;
         this.hasJacket = msg.hasJacket === true;
         this.hasSneakers = msg.hasSneakers === true;
-        this.properties = Array.isArray(msg.properties) ? msg.properties as OwnedProperty[] : [];
+        this.hasPhone = msg.hasPhone === true;
+        this.properties = Array.isArray(msg.properties) ? (msg.properties as OwnedProperty[]).map(p => ({ ...p, level: p.level ?? 1 })) : [];
         if (msg.jobSkills) this.jobSkills = msg.jobSkills as JobSkills;
         if (msg.licenses) this.licenses = msg.licenses as JobLicense;
         if (Array.isArray(msg.trainingCompleted)) this.trainingCompleted = msg.trainingCompleted as string[];
@@ -366,8 +379,9 @@ export class WorldScene extends Phaser.Scene {
       case 'training-failed': this.float(msg.message as string, this.player.x, this.player.y - 20, '#ff5555'); break;
       case 'property-success': {
         if (typeof msg.money === 'number') this.localMoney = msg.money;
-        if (Array.isArray(msg.properties)) this.properties = msg.properties as OwnedProperty[];
+        if (Array.isArray(msg.properties)) this.properties = (msg.properties as OwnedProperty[]).map(p => ({ ...p, level: p.level ?? 1 }));
         this.updateHud();
+        this.refreshPhone();
         SoundEffects.playUpgradeSound();
         this.float(msg.message as string, this.player.x, this.player.y - 30, '#d8b4fe');
         break;
@@ -376,6 +390,7 @@ export class WorldScene extends Phaser.Scene {
       case 'passive-income': {
         if (typeof msg.money === 'number') this.localMoney = msg.money;
         this.updateHud();
+        this.refreshPhone();
         SoundEffects.playCoinSound();
         this.float(msg.message as string, this.player.x, this.player.y - 35, '#d8b4fe');
         break;
@@ -399,6 +414,29 @@ export class WorldScene extends Phaser.Scene {
         this.float(msg.message as string, this.player.x, this.player.y - 30, '#7cfc00');
         break;
       }
+      case 'shop-success': {
+        if (typeof msg.money === 'number') this.localMoney = msg.money;
+        if (Array.isArray(msg.inventory)) this.localInventory = msg.inventory as (InventoryItem | null)[];
+        if (typeof msg.weight === 'number') this.currentWeight = msg.weight;
+        if (typeof msg.hasJacket === 'boolean') this.hasJacket = msg.hasJacket;
+        if (typeof msg.hasSneakers === 'boolean') this.hasSneakers = msg.hasSneakers;
+        if (typeof msg.hasPhone === 'boolean') this.hasPhone = msg.hasPhone;
+        this.refreshUI();
+        SoundEffects.playCoinSound();
+        this.float(msg.message as string, this.player.x, this.player.y - 30, '#7cfc00');
+        break;
+      }
+      case 'shop-failed': this.float(msg.message as string, this.player.x, this.player.y - 20, '#ff3333'); break;
+      case 'property-upgrade-success': {
+        if (typeof msg.money === 'number') this.localMoney = msg.money;
+        if (Array.isArray(msg.properties)) this.properties = (msg.properties as OwnedProperty[]).map(p => ({ ...p, level: p.level ?? 1 }));
+        this.refreshUI();
+        this.refreshPhone();
+        SoundEffects.playUpgradeSound();
+        this.float(msg.message as string, this.player.x, this.player.y - 30, '#38bdf8');
+        break;
+      }
+      case 'property-upgrade-failed': this.float(msg.message as string, this.player.x, this.player.y - 20, '#ff9900'); break;
       case 'use-item-success': {
         if (msg.inventory) this.localInventory = msg.inventory as (InventoryItem | null)[];
         this.currentWeight = msg.weight as number;
@@ -542,6 +580,7 @@ export class WorldScene extends Phaser.Scene {
     let activeKioskId: string | null = null;
     let activeFoodCartEntity: MapEntity | null = null;
     let activeClothingShopEntity: MapEntity | null = null;
+    let activeElectronicsShopEntity: MapEntity | null = null;
     let activeJobEntity: MapEntity | null = null;
     let activePropertyEntity: MapEntity | null = null;
     let activeSchoolEntity: MapEntity | null = null;
@@ -594,6 +633,7 @@ export class WorldScene extends Phaser.Scene {
         activeKioskId = entity.type === 'kiosk' ? entity.id : null;
         activeFoodCartEntity = entity.type === 'food-cart' ? entity : null;
         activeClothingShopEntity = entity.type === 'clothing-shop' ? entity : null;
+        activeElectronicsShopEntity = entity.type === 'electronics-shop' ? entity : null;
         activeJobEntity = this.jobTypeForEntity(entity) ? entity : null;
         activePropertyEntity = entity.type === 'property' ? entity : null;
         activeSchoolEntity = entity.type === 'school' ? entity : null;
@@ -603,12 +643,13 @@ export class WorldScene extends Phaser.Scene {
     this.nearKioskId = activeKioskId;
     this.nearFoodCartEntity = activeFoodCartEntity;
     this.nearClothingShopEntity = activeClothingShopEntity;
+    this.nearElectronicsShopEntity = activeElectronicsShopEntity;
     this.nearJobEntity = activeJobEntity;
     this.nearPropertyEntity = activePropertyEntity;
     this.nearSchoolEntity = activeSchoolEntity;
     this.detectNearbyPlayer();
 
-    const nearAnyWorldInteraction = this.nearKioskId || this.nearFoodCartEntity || this.nearClothingShopEntity || this.nearJobEntity || this.nearPropertyEntity || this.nearSchoolEntity;
+    const nearAnyWorldInteraction = this.nearKioskId || this.nearFoodCartEntity || this.nearClothingShopEntity || this.nearElectronicsShopEntity || this.nearJobEntity || this.nearPropertyEntity || this.nearSchoolEntity;
     const nearPlayer = this.nearPlayerId !== null;
 
     // Показываем подсказку для доставки если есть посылка и рядом дом
@@ -658,7 +699,7 @@ export class WorldScene extends Phaser.Scene {
   // ============================================================
 
   private isInteractiveEntity(entity: MapEntity): boolean {
-    return entity.type === 'kiosk' || entity.type === 'food-cart' || entity.type === 'clothing-shop' || entity.type === 'school' || this.jobTypeForEntity(entity) !== null || entity.type === 'property';
+    return entity.type === 'kiosk' || entity.type === 'food-cart' || entity.type === 'clothing-shop' || entity.type === 'electronics-shop' || entity.type === 'school' || this.jobTypeForEntity(entity) !== null || entity.type === 'property';
   }
 
   private jobTypeForEntity(entity: MapEntity): JobType | null {
@@ -672,6 +713,10 @@ export class WorldScene extends Phaser.Scene {
     const propertyType = entity.properties.propertyType;
     if (propertyType && propertyType in PROPERTIES) return propertyType;
     return null;
+  }
+
+  private ownedPropertyForEntity(entity: MapEntity): OwnedProperty | null {
+    return this.properties.find(p => p.propertyPointId === entity.id || p.id === entity.id) ?? null;
   }
 
   private interactionPrompt(): string {
@@ -690,14 +735,16 @@ export class WorldScene extends Phaser.Scene {
       const propertyType = this.propertyTypeForEntity(this.nearPropertyEntity);
       if (propertyType) {
         const property = PROPERTIES[propertyType];
-        const ownedByType = this.properties.filter(p => p.type === propertyType).length;
-        return `[E] Купить ${property.name}: $${property.price} (есть: ${ownedByType})`;
+        const owned = this.ownedPropertyForEntity(this.nearPropertyEntity);
+        if (owned) return `[E] ${property.name} · LVL ${owned.level ?? 1}/${PROPERTY_MAX_LEVEL}`;
+        return `[E] Купить ${property.name}: $${property.price}`;
       }
     }
 
     if (this.nearKioskId) return '[E] Сдать бутылки';
     if (this.nearFoodCartEntity) return '[E] Купить еду';
     if (this.nearClothingShopEntity) return '[E] Магазин одежды';
+    if (this.nearElectronicsShopEntity) return this.hasPhone ? '[E] Магазин электроники (телефон куплен)' : '[E] Магазин электроники';
     return '[E] Игрок';
   }
 
@@ -795,7 +842,56 @@ export class WorldScene extends Phaser.Scene {
     if (!this.nearPropertyEntity) return;
     const propertyType = this.propertyTypeForEntity(this.nearPropertyEntity);
     if (!propertyType) { this.float('У этой точки не задан тип недвижимости.', this.player.x, this.player.y - 20, '#ff3333'); return; }
-    this.sendGameMessage({ type: 'buy-property', propertyType });
+
+    const owned = this.ownedPropertyForEntity(this.nearPropertyEntity);
+    if (owned) {
+      this.showOwnedPropertyDetails(owned);
+      return;
+    }
+
+    this.showPropertyPurchaseDialog(this.nearPropertyEntity, propertyType);
+  }
+
+  private showPropertyPurchaseDialog(entity: MapEntity, propertyType: PropertyType): void {
+    const def = PROPERTIES[propertyType];
+    const existing = document.getElementById('property-purchase-popup');
+    if (existing) existing.remove();
+
+    const popup = document.createElement('div');
+    popup.id = 'property-purchase-popup';
+    popup.innerHTML = `
+      <div class="property-popup-card">
+        <h3>${def.name}</h3>
+        <p>${def.description ?? 'Бизнес для пассивного дохода'}</p>
+        <div class="property-popup-row"><span>Цена покупки</span><strong>$${def.price.toFixed(2)}</strong></div>
+        <div class="property-popup-row"><span>Доход на 1 уровне</span><strong>$${def.incomePerMin.toFixed(2)}/мин</strong></div>
+        <div class="property-popup-row"><span>Прокачка</span><strong>до ${PROPERTY_MAX_LEVEL} уровня</strong></div>
+        <div class="property-popup-hint">Эту конкретную точку можно купить только один раз. Если в редакторе поставлено 2 таких бизнеса — второй нужно покупать в другом месте.</div>
+        <div class="property-popup-actions">
+          <button id="property-buy-confirm" class="dash-btn dash-btn-primary">Купить</button>
+          <button id="property-buy-cancel" class="dash-btn dash-btn-danger">Отмена</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(popup);
+    popup.querySelector('#property-buy-cancel')?.addEventListener('click', () => popup.remove());
+    popup.addEventListener('click', (event) => { if (event.target === popup) popup.remove(); });
+    popup.querySelector('#property-buy-confirm')?.addEventListener('click', () => {
+      popup.remove();
+      this.sendGameMessage({ type: 'buy-property', propertyType, propertyPointId: entity.id });
+    });
+  }
+
+  private showOwnedPropertyDetails(property: OwnedProperty): void {
+    const def = PROPERTIES[property.type];
+    const level = property.level ?? 1;
+    const income = getPropertyIncomePerMin(property);
+    const upgradeCost = getPropertyUpgradeCost(property);
+    const text = level >= PROPERTY_MAX_LEVEL
+      ? `${def.name}\nУровень: ${level}/${PROPERTY_MAX_LEVEL}\nДоход: $${income.toFixed(2)}/мин\n\nМаксимальный уровень уже достигнут.`
+      : `${def.name}\nУровень: ${level}/${PROPERTY_MAX_LEVEL}\nДоход: $${income.toFixed(2)}/мин\nПрокачка до ${level + 1}: $${upgradeCost}\n\nПрокачать сейчас?`;
+    if (level < PROPERTY_MAX_LEVEL && confirm(text)) this.sendGameMessage({ type: 'upgrade-property', propertyId: property.id });
+    else if (level >= PROPERTY_MAX_LEVEL) alert(text);
   }
 
   // ============================================================
@@ -932,6 +1028,29 @@ export class WorldScene extends Phaser.Scene {
   //  SECTION: UI
   // ============================================================
 
+  private togglePhone(force?: boolean): void {
+    if (!this.hasPhone) { this.float('Сначала купи телефон в магазине электроники!', this.player.x, this.player.y - 25, '#ff9900'); return; }
+    const shouldOpen = force !== undefined ? force : !this.phoneUI.isOpen;
+    if (!shouldOpen) { this.phoneUI.destroy(); return; }
+    this.showPhone();
+  }
+
+  private showPhone(): void {
+    if (!this.hasPhone) return;
+    this.phoneUI.show(
+      { money: this.localMoney, properties: this.properties },
+      {
+        onClose: () => this.phoneUI.destroy(),
+        onUpgradeProperty: (propertyId) => this.sendGameMessage({ type: 'upgrade-property', propertyId }),
+      },
+    );
+  }
+
+  private refreshPhone(): void {
+    if (!this.hasPhone || !this.phoneUI.isOpen) return;
+    this.showPhone();
+  }
+
   private toggleInventory(force?: boolean): void {
     this.isInventoryOpen = force !== undefined ? force : !this.isInventoryOpen;
     this.updateDashboard();
@@ -947,6 +1066,8 @@ export class WorldScene extends Phaser.Scene {
       nearKiosk: !!this.nearKioskId,
       nearFoodCart: !!this.nearFoodCartEntity,
       nearClothingShop: !!this.nearClothingShopEntity,
+      nearElectronicsShop: !!this.nearElectronicsShopEntity,
+      hasPhone: this.hasPhone,
       inventory: this.localInventory,
       backpackTier: this.backpackTier,
       equippedBag: this.equippedBag,
@@ -963,6 +1084,7 @@ export class WorldScene extends Phaser.Scene {
       onSellAll: () => this.sendGameMessage({ type: 'sell-all-bottles' }),
       onBuyItem: (itemKey, cost) => this.buyItemToInventory(itemKey, cost),
       onBuyClothing: (type, cost) => this.buyClothingItem(type, cost),
+      onBuyPhone: (cost) => this.buyPhone(cost),
       onUnequipBag: () => this.unequipBag(),
       onUseSlot: (slotIdx, item) => this.handleUseSlot(slotIdx, item),
       onDropSlot: (slotIdx) => this.dropItem(slotIdx),
@@ -996,6 +1118,13 @@ export class WorldScene extends Phaser.Scene {
   private buyClothingItem(type: 'jacket' | 'sneakers' | 'crown', cost: number): void {
     if (this.localMoney < cost) { this.float('Недостаточно денег!', this.player.x, this.player.y - 30, '#ff3333'); return; }
     this.sendGameMessage({ type: 'buy-shop-item', itemType: type });
+    SoundEffects.playUpgradeSound();
+  }
+
+  private buyPhone(cost: number): void {
+    if (this.hasPhone) { this.float('Телефон уже куплен!', this.player.x, this.player.y - 30, '#ff9900'); return; }
+    if (this.localMoney < cost) { this.float('Недостаточно денег!', this.player.x, this.player.y - 30, '#ff3333'); return; }
+    this.sendGameMessage({ type: 'buy-shop-item', itemType: 'phone' });
     SoundEffects.playUpgradeSound();
   }
 
@@ -1056,6 +1185,7 @@ export class WorldScene extends Phaser.Scene {
       shawarmaBuffTimer: this.shawarmaBuffTimer,
       remoteCount: this.remotes.size,
       hunger: this.hunger,
+      hasPhone: this.hasPhone,
     });
   }
 
@@ -1067,6 +1197,7 @@ export class WorldScene extends Phaser.Scene {
   private destroyHTMLOverlays(): void {
     this.hud.destroy();
     this.dashboard.destroy();
+    this.phoneUI.destroy();
     this.playerMenu.hide();
     this.dragDrop.cancel();
     removeAllTradePopups();

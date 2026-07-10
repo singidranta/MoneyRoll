@@ -960,3 +960,310 @@
     min-width: min(320px, 90vw);
   }
 }
+
+/* Phone button — near inventory */
+#btn-toggle-phone {
+  position: fixed;
+  bottom: 14px;
+  right: 82px;
+  width: 56px;
+  height: 56px;
+  border: 2px solid var(--mr-line);
+  border-radius: 8px;
+  background: var(--mr-panel);
+  color: var(--mr-text);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 9999;
+  box-shadow: 0 2px 0 #0a0c10;
+  padding: 0;
+}
+
+#btn-toggle-phone:hover {
+  background: var(--mr-panel-2);
+  border-color: #38bdf8;
+}
+
+#btn-toggle-phone:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 #0a0c10;
+}
+
+#btn-toggle-phone img {
+  width: 30px;
+  height: 30px;
+}
+
+/* ============================================================
+   PHONE UI
+   ============================================================ */
+#phone-ui-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 100000;
+  pointer-events: auto;
+  font-family: var(--mr-font);
+}
+
+.phone-shell {
+  width: min(390px, 92vw);
+  height: min(720px, 92vh);
+  background: #05070a;
+  border: 4px solid #1f2937;
+  border-radius: 34px;
+  padding: 14px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.65);
+}
+
+.phone-speaker {
+  width: 76px;
+  height: 6px;
+  border-radius: 999px;
+  background: #1f2937;
+  margin: 0 auto 10px;
+}
+
+.phone-screen {
+  height: calc(100% - 16px);
+  overflow-y: auto;
+  background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+  border: 1px solid #263241;
+  border-radius: 24px;
+  padding: 16px;
+  color: var(--mr-text);
+}
+
+.phone-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.phone-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #e0f2fe;
+}
+
+.phone-subtitle {
+  font-size: 12px;
+  color: #93a4b8;
+  margin-top: 2px;
+}
+
+.phone-close {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #111827;
+  color: #cbd5e1;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.phone-close:hover {
+  color: var(--mr-red);
+  border-color: #7f1d1d;
+}
+
+.phone-summary {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.phone-summary-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #334155;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.phone-summary-card span {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.phone-summary-card strong {
+  color: var(--mr-gold);
+  font-size: 14px;
+}
+
+.phone-list-title {
+  margin: 12px 0 8px;
+  font-size: 12px;
+  color: #bae6fd;
+  font-weight: 800;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+}
+
+.phone-business-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.phone-empty {
+  padding: 16px;
+  border: 1px dashed #334155;
+  border-radius: 12px;
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.phone-business-card {
+  padding: 10px;
+  border: 1px solid #334155;
+  border-radius: 14px;
+  background: rgba(30, 41, 59, 0.65);
+}
+
+.phone-business-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.phone-business-main img {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.phone-business-main strong,
+.phone-business-main span {
+  display: block;
+}
+
+.phone-business-main strong {
+  color: #f8fafc;
+  font-size: 13px;
+}
+
+.phone-business-main span {
+  color: #94a3b8;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.phone-upgrade-btn {
+  width: 100%;
+  border: 1px solid #075985;
+  border-radius: 10px;
+  background: #082f49;
+  color: #bae6fd;
+  font-weight: 800;
+  font-size: 12px;
+  padding: 9px 10px;
+  cursor: pointer;
+}
+
+.phone-upgrade-btn:hover:not(:disabled) {
+  background: #0c4a6e;
+}
+
+.phone-upgrade-btn:disabled {
+  cursor: default;
+  opacity: .55;
+}
+
+/* ============================================================
+   PROPERTY PURCHASE POPUP
+   ============================================================ */
+#property-purchase-popup {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,.45);
+  z-index: 100000;
+  pointer-events: auto;
+  font-family: var(--mr-font);
+}
+
+.property-popup-card {
+  width: min(420px, 92vw);
+  background: var(--mr-panel);
+  border: 2px solid #7e22ce;
+  border-radius: 12px;
+  padding: 16px;
+  color: var(--mr-text);
+  box-shadow: 0 6px 0 #0a0c10;
+}
+
+.property-popup-card h3 {
+  margin: 0 0 8px;
+  color: #d8b4fe;
+  font-size: 18px;
+}
+
+.property-popup-card p {
+  margin: 0 0 12px;
+  color: var(--mr-text-dim);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.property-popup-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--mr-line);
+  font-size: 13px;
+}
+
+.property-popup-row span { color: var(--mr-text-dim); }
+.property-popup-row strong { color: var(--mr-gold); }
+
+.property-popup-hint {
+  margin: 12px 0;
+  padding: 10px;
+  border: 1px dashed #7e22ce;
+  border-radius: 8px;
+  color: #d8b4fe;
+  background: rgba(88, 28, 135, .18);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.property-popup-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.property-popup-actions .dash-btn {
+  margin-bottom: 0;
+}
+
+.dashboard-panel.electronics { border-color: #075985; }
+.dashboard-panel.electronics h3 { color: #38bdf8; }
+.shop-card-disabled {
+  cursor: default;
+  opacity: .7;
+}
+.shop-card-disabled:hover {
+  transform: none;
+  box-shadow: none;
+  background: var(--mr-panel-2);
+}

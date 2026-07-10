@@ -13,10 +13,14 @@ import {
   INVENTORY_SLOTS,
   JOB_REWARDS,
   PROPERTIES,
+  PROPERTY_MAX_LEVEL,
   SHOP_PRICES,
   COURIER_RANKS,
   getCourierRank,
   TRAINING_COURSES,
+  calculatePropertiesIncomePerMin,
+  getPropertyIncomePerMin,
+  getPropertyUpgradeCost,
   type BottleType,
   type FoodType,
   type InventoryItem,
@@ -35,7 +39,7 @@ import {
   tierToBag,
 } from '../../../shared/items.js';
 import { TILE_SIZE, TILE_SIZE_HALF, type MapEntity } from '../../../shared/map.js';
-import type { Client, DeliveryPoint, JobPoint, PropertyPoint, SchoolPoint, WireMessage } from '../types.js';
+import type { Client, DeliveryPoint, ElectronicsShopPoint, JobPoint, PropertyPoint, SchoolPoint, WireMessage } from '../types.js';
 
 export type EconomyContext = {
   bottles: Map<string, ServerBottle>;
@@ -43,6 +47,7 @@ export type EconomyContext = {
   jobPoints: JobPoint[];
   propertyPoints: PropertyPoint[];
   schoolPoints: SchoolPoint[];
+  electronicsShops: ElectronicsShopPoint[];
   deliveryHouses: DeliveryPoint[];
   saveClient: (c: Client) => void;
   broadcastAll: (payload: object) => void;
@@ -61,6 +66,10 @@ function nearAnyKiosk(c: Client, kiosks: MapEntity[]): boolean {
     if (Math.hypot(c.x - kx, c.y - ky) < INTERACT_DIST) return true;
   }
   return false;
+}
+
+function nearAnyElectronicsShop(c: Client, shops: ElectronicsShopPoint[]): boolean {
+  return shops.some((shop) => Math.hypot(c.x - shop.x, c.y - shop.y) < INTERACT_DIST);
 }
 
 // ============================================================
@@ -171,6 +180,16 @@ export function handleBuyShopItem(c: Client, msg: WireMessage, ctx: EconomyConte
   const cost = SHOP_PRICES[itemType];
   if (!cost) { send(c, { type: 'shop-failed', message: 'Товар не продаётся' }); return; }
   if (c.money < cost) { send(c, { type: 'shop-failed', message: 'Недостаточно денег!' }); return; }
+
+  if (itemType === 'phone') {
+    if (!nearAnyElectronicsShop(c, ctx.electronicsShops)) { send(c, { type: 'shop-failed', message: 'Подойди к магазину электроники!' }); return; }
+    if (c.hasPhone) { send(c, { type: 'shop-failed', message: 'Телефон уже куплен' }); return; }
+    c.money -= cost;
+    c.hasPhone = true;
+    ctx.saveClient(c);
+    send(c, { type: 'shop-success', itemType, money: c.money, hasPhone: c.hasPhone, message: 'Телефон куплен! Кнопка появилась рядом с инвентарём.' });
+    return;
+  }
 
   if (itemType === 'jacket' || itemType === 'sneakers' || itemType === 'crown') {
     if (itemType === 'jacket' && c.hasJacket) { send(c, { type: 'shop-failed', message: 'Уже куплено' }); return; }
@@ -440,30 +459,70 @@ export function handleJobStart(c: Client, msg: WireMessage, _ctx: EconomyContext
 
 export function handleBuyProperty(c: Client, msg: WireMessage, ctx: EconomyContext): void {
   const propertyType = msg.propertyType as PropertyType;
+  const propertyPointId = msg.propertyPointId as string | undefined;
   const def = PROPERTIES[propertyType];
   if (!def) return;
 
-  const isNearPropertyPoint = ctx.propertyPoints.some(
-    (point) => point.propertyType === propertyType && Math.hypot(c.x - point.x, c.y - point.y) < INTERACT_DIST,
-  );
-  if (!isNearPropertyPoint) { send(c, { type: 'property-failed', message: 'Подойди к точке покупки недвижимости!' }); return; }
+  const point = ctx.propertyPoints.find((candidate) => {
+    if (candidate.propertyType !== propertyType) return false;
+    if (propertyPointId && candidate.id !== propertyPointId) return false;
+    return Math.hypot(c.x - candidate.x, c.y - candidate.y) < INTERACT_DIST;
+  });
+  if (!point) { send(c, { type: 'property-failed', message: 'Подойди к нужной точке покупки недвижимости!' }); return; }
+
+  const alreadyOwned = c.properties.some((property) => property.propertyPointId === point.id || property.id === point.id);
+  if (alreadyOwned) {
+    send(c, { type: 'property-failed', message: 'Этот бизнес в этом месте уже куплен. Найди другую точку на карте.' });
+    return;
+  }
+
   if (c.money < def.price) { send(c, { type: 'property-failed', message: 'Недостаточно денег!' }); return; }
 
-  c.money -= def.price;
+  c.money = parseFloat((c.money - def.price).toFixed(2));
   const owned: OwnedProperty = {
-    id: `${propertyType}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    id: point.id,
     type: propertyType,
     boughtAt: Date.now(),
+    level: 1,
+    propertyPointId: point.id,
   };
   c.properties.push(owned);
   ctx.saveClient(c);
 
-  const count = c.properties.filter(p => p.type === propertyType).length;
-  const totalIncome = c.properties.reduce((sum, p) => sum + PROPERTIES[p.type].incomePerMin, 0);
+  const totalIncome = calculatePropertiesIncomePerMin(c.properties);
 
   send(c, {
-    type: 'property-success', propertyType, money: c.money, properties: c.properties,
-    message: `Куплено: ${def.name} (x${count})! Пассивный доход: +$${totalIncome.toFixed(2)}/мин`,
+    type: 'property-success', propertyType, propertyPointId: point.id, money: c.money, properties: c.properties,
+    message: `Куплено: ${def.name}! LVL 1/${PROPERTY_MAX_LEVEL}. Пассивный доход: +$${totalIncome.toFixed(2)}/мин`,
+  });
+}
+
+export function handleUpgradeProperty(c: Client, msg: WireMessage, ctx: EconomyContext): void {
+  const propertyId = msg.propertyId as string;
+  if (typeof propertyId !== 'string') return;
+
+  const property = c.properties.find((candidate) => candidate.id === propertyId || candidate.propertyPointId === propertyId);
+  if (!property) { send(c, { type: 'property-upgrade-failed', message: 'Бизнес не найден!' }); return; }
+
+  property.level = property.level ?? 1;
+  if (property.level >= PROPERTY_MAX_LEVEL) { send(c, { type: 'property-upgrade-failed', message: 'У бизнеса уже максимальный уровень!' }); return; }
+
+  const cost = getPropertyUpgradeCost(property);
+  if (c.money < cost) { send(c, { type: 'property-upgrade-failed', message: `Нужно $${cost}, у тебя $${c.money.toFixed(2)}` }); return; }
+
+  c.money = parseFloat((c.money - cost).toFixed(2));
+  property.level += 1;
+  ctx.saveClient(c);
+
+  const def = PROPERTIES[property.type];
+  const income = getPropertyIncomePerMin(property);
+  const totalIncome = calculatePropertiesIncomePerMin(c.properties);
+  send(c, {
+    type: 'property-upgrade-success',
+    propertyId: property.id,
+    money: c.money,
+    properties: c.properties,
+    message: `${def.name} прокачан до LVL ${property.level}/${PROPERTY_MAX_LEVEL}! Доход: $${income.toFixed(2)}/мин, всего: $${totalIncome.toFixed(2)}/мин`,
   });
 }
 

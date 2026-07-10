@@ -70,6 +70,7 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('apartment-2', '/assets/props/flat/buildings/apartment-2.webp');
     this.load.image('shack', '/assets/props/flat/buildings/shack.png');
     this.load.image('clothing-shop', '/assets/props/flat/buildings/clothing-shop.webp');
+    this.load.image('electronics-shop', '/assets/props/flat/buildings/electronics-shop.svg');
     this.load.image('school', '/assets/props/flat/buildings/school.webp');
     this.load.image('wall', '/assets/props/flat/walls/wall.webp');
     this.load.image('food-cart', '/assets/props/flat/kiosk/food-cart.webp');

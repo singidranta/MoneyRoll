@@ -241,6 +241,7 @@ export class EditorScene extends Phaser.Scene {
       case 'kiosk':
       case 'food-cart':
       case 'clothing-shop':
+      case 'electronics-shop':
       case 'apartment-1':
       case 'apartment-2':
       case 'wall':
@@ -539,6 +540,8 @@ export class EditorScene extends Phaser.Scene {
         spriteKey = 'food-cart';
       } else if (this.selectedEntityType === 'clothing-shop') {
         spriteKey = 'clothing-shop';
+      } else if (this.selectedEntityType === 'electronics-shop') {
+        spriteKey = 'electronics-shop';
       } else if (this.selectedEntityType === 'apartment-1') {
         spriteKey = 'apartment-1';
       } else if (this.selectedEntityType === 'apartment-2') {
@@ -675,6 +678,7 @@ export class EditorScene extends Phaser.Scene {
             <option value="spawner">Bottle Spawner (Спавнер)</option>
             <option value="food-cart">Ларёк с Шаурмой (Магазин)</option>
             <option value="clothing-shop">Магазин одежды (Гардероб)</option>
+            <option value="electronics-shop">📱 Магазин электроники</option>
             <option value="school">🎓 Школа профессий</option>
             <option value="apartment-1">Кирпичный жилой дом</option>
             <option value="apartment-2">Панельный жилой дом</option>
