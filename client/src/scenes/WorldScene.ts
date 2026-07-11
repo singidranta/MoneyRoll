@@ -295,6 +295,13 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  private syncParcelState(): void {
+    this.hasParcel = this.localInventory.includes('parcel');
+    if (!this.hasParcel && this.deliveryManager.getActiveTarget()) {
+      this.deliveryManager.completeDelivery();
+    }
+  }
+
   private processServerMessage(msg: NetcodeMessage): void {
     switch (msg.type) {
       case 'welcome': {
@@ -321,6 +328,18 @@ export class WorldScene extends Phaser.Scene {
 
         this.currentWeight = calculateInventoryWeight(this.localInventory);
         this.inventoryManager.updateInventory(this.localInventory, this.backpackTier);
+        this.syncParcelState();
+
+        // Restore courier delivery target if activeJob exists
+        const activeJob = (msg as any).activeJob;
+        if (activeJob?.type === 'courier' && activeJob?.data?.target) {
+          const target = activeJob.data.target;
+          if (typeof target.cellX === 'number' && typeof target.cellY === 'number') {
+            this.deliveryManager.startDelivery({ cellX: target.cellX, cellY: target.cellY });
+            this.hasParcel = this.localInventory.includes('parcel');
+          }
+        }
+
         this.refreshUI();
 
         if (!this.hasAuthenticated) {
@@ -409,6 +428,7 @@ export class WorldScene extends Phaser.Scene {
         this.localInventory = msg.inventory as (InventoryItem | null)[];
         this.currentWeight = msg.weight as number;
         this.inventoryManager.updateInventory(this.localInventory);
+        this.syncParcelState();
         this.removeBottleClient(bottleId);
         this.refreshUI();
         SoundEffects.playPopSound();
@@ -440,6 +460,7 @@ export class WorldScene extends Phaser.Scene {
         if (Array.isArray(msg.inventory)) {
           this.localInventory = msg.inventory as (InventoryItem | null)[];
           this.inventoryManager.updateInventory(this.localInventory);
+          this.syncParcelState();
         }
         if (typeof msg.money === 'number') this.localMoney = msg.money;
         if (typeof msg.weight === 'number') this.currentWeight = msg.weight;
@@ -476,10 +497,21 @@ export class WorldScene extends Phaser.Scene {
       case 'property-success':
       case 'property-upgrade-success': {
         if (typeof msg.money === 'number') this.localMoney = msg.money;
+        if (Array.isArray(msg.inventory)) {
+          this.localInventory = msg.inventory as (InventoryItem | null)[];
+          this.inventoryManager.updateInventory(this.localInventory);
+          this.syncParcelState();
+        }
+        if (typeof msg.weight === 'number') this.currentWeight = msg.weight;
         if (Array.isArray(msg.properties)) this.properties = msg.properties as OwnedProperty[];
         if (msg.jobSkills) this.jobSkills = msg.jobSkills as JobSkills;
         if (msg.licenses) this.licenses = msg.licenses as JobLicense;
         if (Array.isArray(msg.trainingCompleted)) this.trainingCompleted = msg.trainingCompleted as string[];
+        // Courier job completion cleanup
+        if (msg.type === 'job-success' && (msg as any).jobType === 'courier') {
+          this.hasParcel = false;
+          this.deliveryManager.completeDelivery();
+        }
         this.refreshUI();
         if (typeof msg.message === 'string') this.float(msg.message, this.player.x, this.player.y - 28, '#fbbf24');
         break;
@@ -499,6 +531,7 @@ export class WorldScene extends Phaser.Scene {
         if (Array.isArray(msg.inventory)) {
           this.localInventory = msg.inventory as (InventoryItem | null)[];
           this.inventoryManager.updateInventory(this.localInventory);
+          this.syncParcelState();
         }
         if (typeof msg.weight === 'number') this.currentWeight = msg.weight;
         this.refreshUI();
@@ -764,15 +797,21 @@ export class WorldScene extends Phaser.Scene {
   // ============================================================
 
   private deliverParcel(): void {
-    if (!this.hasParcel) return;
+    // Server-authoritative delivery – allow submission even if local parcel is missing (desync recovery)
+    if (!this.hasParcel && !this.localInventory.includes('parcel')) {
+      this.float('Посылки нет в инвентаре!', this.player.x, this.player.y - 25, '#f87171');
+      return;
+    }
 
+    // Optimistically remove parcel locally for instant feedback
     const slotIdx = this.localInventory.findIndex(i => i === 'parcel');
-    if (slotIdx === -1) return;
+    if (slotIdx !== -1) {
+      this.localInventory[slotIdx] = null;
+      this.currentWeight = calculateInventoryWeight(this.localInventory);
+      this.inventoryManager.updateInventory(this.localInventory);
+    }
 
-    this.localInventory[slotIdx] = null;
     this.hasParcel = false;
-    this.currentWeight = calculateInventoryWeight(this.localInventory);
-    this.inventoryManager.updateInventory(this.localInventory);
     this.deliveryManager.completeDelivery();
     this.refreshUI();
 
@@ -1201,14 +1240,15 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private startCourierFromServer(msg: NetcodeMessage): void {
-    const activeSlots = getActiveSlotsCount(this.backpackTier);
-    let free = -1;
-    for (let i = 0; i < activeSlots; i++) {
-      if (this.localInventory[i] === null) { free = i; break; }
-    }
-    if (free === -1) {
-      this.float('Инвентарь полон!', this.player.x, this.player.y - 25, '#f87171');
-      return;
+    // Server now gives parcel authoritatively – sync inventory if provided
+    const inv = (msg as any).inventory;
+    if (Array.isArray(inv)) {
+      this.localInventory = inv as (InventoryItem | null)[];
+      this.currentWeight = typeof (msg as any).weight === 'number'
+        ? (msg as any).weight
+        : calculateInventoryWeight(this.localInventory);
+      this.inventoryManager.updateInventory(this.localInventory, this.backpackTier);
+      this.syncParcelState();
     }
 
     const taskData = msg.taskData as { target?: { cellX?: unknown; cellY?: unknown } } | undefined;
@@ -1218,10 +1258,9 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
-    this.localInventory[free] = 'parcel';
-    this.hasParcel = true;
-    this.currentWeight = calculateInventoryWeight(this.localInventory);
-    this.inventoryManager.updateInventory(this.localInventory);
+    // Ensure parcel flag is correct (server-authoritative)
+    this.hasParcel = this.localInventory.includes('parcel');
+
     this.deliveryManager.startDelivery({ cellX: target.cellX, cellY: target.cellY });
     this.refreshUI();
     this.float('Взял посылку! Доставь в подсвеченный дом.', this.player.x, this.player.y - 32, '#4ade80');

@@ -430,15 +430,35 @@ export function handleJobStart(c: Client, msg: WireMessage, ctx: EconomyContext)
       send(c, { type: 'job-failed', message: 'Нет домов для доставки на карте!' });
       return;
     }
+    // Check inventory space and give parcel (server-authoritative)
+    const freeSlot = findFreeActiveSlot(c);
+    if (freeSlot === -1) {
+      send(c, { type: 'job-failed', message: 'Инвентарь полон! Освободи место для посылки.' });
+      return;
+    }
+    const currentWeight = calculateInventoryWeight(c.inventory);
+    if (currentWeight + 1.5 > getMaxWeight(c.backpackTier)) {
+      send(c, { type: 'job-failed', message: 'Слишком тяжело! Разгрузи инвентарь.' });
+      return;
+    }
     const target = ctx.deliveryHouses[Math.floor(Math.random() * ctx.deliveryHouses.length)];
     taskData = { target: { id: target.id, x: target.x, y: target.y, cellX: target.cellX, cellY: target.cellY }, deliveries: 1 };
+    // Give parcel item
+    c.inventory[freeSlot] = 'parcel';
   } else if (jobType === 'lemonade') {
     taskData = { beats: 12, bpm: 110 + Math.floor(Math.random() * 30), recipe: 'classic' };
   }
 
   c.activeJob = { type: jobType, startedAt: Date.now(), data: taskData };
   ctx.saveClient(c);
-  send(c, { type: 'job-started', jobType, taskData, skill: c.jobSkills[jobType] });
+  send(c, { 
+    type: 'job-started', 
+    jobType, 
+    taskData, 
+    skill: c.jobSkills[jobType],
+    inventory: c.inventory,
+    weight: calculateInventoryWeight(c.inventory)
+  });
 }
 
 export function handleJobComplete(c: Client, msg: WireMessage, ctx: EconomyContext): void {
@@ -515,6 +535,15 @@ export function handleJobComplete(c: Client, msg: WireMessage, ctx: EconomyConte
   c.jobSkills[jobType] = skill;
 
   c.money = roundMoney(c.money + reward);
+
+  // Remove parcel on courier completion (server-authoritative)
+  if (jobType === 'courier') {
+    const parcelIdx = c.inventory.findIndex(i => i === 'parcel');
+    if (parcelIdx !== -1) {
+      c.inventory[parcelIdx] = null;
+    }
+  }
+
   c.activeJob = null;
   ctx.saveClient(c);
 
@@ -526,6 +555,8 @@ export function handleJobComplete(c: Client, msg: WireMessage, ctx: EconomyConte
 
   send(c, {
     type: 'job-success', jobType, reward, money: c.money, skill, leveledUp, accuracy: clientScore,
+    inventory: c.inventory,
+    weight: calculateInventoryWeight(c.inventory),
     message: `${messages[jobType]} +$${reward.toFixed(2)}${leveledUp ? ` | LVL UP -> ${skill.level}!` : ''}`,
   });
 }

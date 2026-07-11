@@ -311,6 +311,11 @@ wss.on('connection', (ws, req) => {
     hasCrown: playerClient?.hasCrown ?? false,
     hasPhone: playerClient?.hasPhone ?? false,
     properties: playerClient?.properties ?? [],
+    jobSkills: playerClient?.jobSkills,
+    licenses: playerClient?.licenses,
+    trainingCompleted: playerClient?.trainingCompleted ?? [],
+    hunger: playerClient?.hunger ?? 100,
+    activeJob: playerClient?.activeJob ?? null,
   });
 
   // Сообщаем остальным, что новый игрок появился.
