@@ -32,7 +32,7 @@ import {
   isBag,
   isFood,
 } from '../../../shared/items';
-import { TILE_SIZE, TILE_SIZE_HALF, type MapDocument, type MapEntity } from '../../../shared/map';
+import type { MapDocument, MapEntity } from '../../../shared/map';
 import { SoundEffects } from '../systems/SoundEffects';
 import {
   AUTOSAVE_INTERVAL_MS,
@@ -93,6 +93,7 @@ export class WorldScene extends Phaser.Scene {
   private keyE!: Phaser.Input.Keyboard.Key;
   private keyI!: Phaser.Input.Keyboard.Key;
   private keyTab!: Phaser.Input.Keyboard.Key;
+  private keyShift!: Phaser.Input.Keyboard.Key;
 
   // Player state
   private player!: Phaser.GameObjects.Sprite;
@@ -131,8 +132,6 @@ export class WorldScene extends Phaser.Scene {
   private nearFoodCartEntity: MapEntity | null = null;
   private nearClothingShopEntity: MapEntity | null = null;
   private nearElectronicsShopEntity: MapEntity | null = null;
-  private nearJobEntity: MapEntity | null = null;
-  private nearPropertyEntity: MapEntity | null = null;
   private nearPlayerId: string | null = null;
   private tradeTargetId: string | null = null;
   private properties: OwnedProperty[] = [];
@@ -144,7 +143,6 @@ export class WorldScene extends Phaser.Scene {
   private jobSkills: JobSkills = JSON.parse(JSON.stringify(DEFAULT_JOB_SKILLS));
   private licenses: JobLicense = JSON.parse(JSON.stringify(DEFAULT_LICENSES));
   private trainingCompleted: string[] = [];
-  private nearSchoolEntity: MapEntity | null = null;
 
   // Courier delivery
   private hasParcel = false;
@@ -164,9 +162,6 @@ export class WorldScene extends Phaser.Scene {
   private interactionDetector!: InteractionDetector;
   private inventoryManager!: InventoryManager;
   private deliveryManager!: DeliveryManager;
-
-  // Single reusable bottle hint (prevents memory leak)
-  private bottleHint?: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'World' });
@@ -192,6 +187,7 @@ export class WorldScene extends Phaser.Scene {
     this.keyE = kb.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.keyI = kb.addKey(Phaser.Input.Keyboard.KeyCodes.I);
     this.keyTab = kb.addKey(Phaser.Input.Keyboard.KeyCodes.TAB);
+    this.keyShift = kb.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
 
     // Background
     this.groundTileSprite = this.add.tileSprite(0, 0, this.scale.width, this.scale.height, 'tile-ground-grass');
@@ -433,8 +429,111 @@ export class WorldScene extends Phaser.Scene {
         break;
       }
 
-      // ... остальные кейсы (sell, job, property и т.д.) — оставлены без изменений для brevity
-      // (полная версия содержит все case как в оригинале)
+      case 'sell-success':
+      case 'shop-success':
+      case 'equip-success':
+      case 'use-item-success':
+      case 'inventory-sync':
+      case 'drop-success':
+      case 'steal-result':
+      case 'trade-complete': {
+        if (Array.isArray(msg.inventory)) {
+          this.localInventory = msg.inventory as (InventoryItem | null)[];
+          this.inventoryManager.updateInventory(this.localInventory);
+        }
+        if (typeof msg.money === 'number') this.localMoney = msg.money;
+        if (typeof msg.weight === 'number') this.currentWeight = msg.weight;
+        if (typeof msg.backpackTier === 'number') {
+          this.backpackTier = msg.backpackTier;
+          this.equippedBag = this.backpackTier === 2 ? 'bag-adidas' : this.backpackTier === 3 ? 'backpack-tourist' : null;
+          this.inventoryManager.updateInventory(this.localInventory, this.backpackTier);
+        }
+        if (typeof msg.hunger === 'number') this.hunger = msg.hunger;
+        if (msg.hasPhone === true) this.hasPhone = true;
+        if (msg.hasJacket === true) this.hasJacket = true;
+        if (msg.hasSneakers === true) this.hasSneakers = true;
+        this.refreshUI();
+        if (typeof msg.message === 'string') this.float(msg.message, this.player.x, this.player.y - 24, '#4ade80');
+        break;
+      }
+
+      case 'sell-failed':
+      case 'shop-failed':
+      case 'equip-failed':
+      case 'upgrade-failed':
+      case 'interaction-failed':
+      case 'trade-failed':
+      case 'auth-failed': {
+        if (typeof msg.message === 'string') this.float(msg.message, this.player.x, this.player.y - 24, '#f87171');
+        break;
+      }
+
+      case 'give-money-result':
+      case 'player-receive-money':
+      case 'passive-income':
+      case 'job-success':
+      case 'training-success':
+      case 'property-success':
+      case 'property-upgrade-success': {
+        if (typeof msg.money === 'number') this.localMoney = msg.money;
+        if (Array.isArray(msg.properties)) this.properties = msg.properties as OwnedProperty[];
+        if (msg.jobSkills) this.jobSkills = msg.jobSkills as JobSkills;
+        if (msg.licenses) this.licenses = msg.licenses as JobLicense;
+        if (Array.isArray(msg.trainingCompleted)) this.trainingCompleted = msg.trainingCompleted as string[];
+        this.refreshUI();
+        if (typeof msg.message === 'string') this.float(msg.message, this.player.x, this.player.y - 28, '#fbbf24');
+        break;
+      }
+
+      case 'hunger-update':
+      case 'hunger-alert': {
+        if (typeof msg.hunger === 'number') this.hunger = msg.hunger;
+        this.refreshUI();
+        if (msg.type === 'hunger-alert' && typeof msg.message === 'string') {
+          this.float(msg.message, this.player.x, this.player.y - 34, '#fb923c');
+        }
+        break;
+      }
+
+      case 'player-notice': {
+        if (Array.isArray(msg.inventory)) {
+          this.localInventory = msg.inventory as (InventoryItem | null)[];
+          this.inventoryManager.updateInventory(this.localInventory);
+        }
+        if (typeof msg.weight === 'number') this.currentWeight = msg.weight;
+        this.refreshUI();
+        if (typeof msg.message === 'string') this.float(msg.message, this.player.x, this.player.y - 34, '#fb923c');
+        break;
+      }
+
+      case 'trade-offer': {
+        if (typeof msg.offerId !== 'string' || typeof msg.fromId !== 'string' || typeof msg.itemType !== 'string') break;
+        const offerId = msg.offerId;
+        showTradeOfferPopup(
+          msg.fromId,
+          msg.itemType as InventoryItem,
+          () => this.sendGameMessage({ type: 'trade-accept', offerId }),
+          () => this.sendGameMessage({ type: 'trade-decline', offerId }),
+        );
+        break;
+      }
+
+      case 'trade-sent':
+      case 'trade-declined':
+      case 'job-failed':
+      case 'training-failed':
+      case 'property-failed':
+      case 'property-upgrade-failed': {
+        if (typeof msg.message === 'string') this.float(msg.message, this.player.x, this.player.y - 28, '#fb923c');
+        break;
+      }
+
+      case 'job-started': {
+        if (msg.jobType === 'courier') this.startCourierFromServer(msg);
+        else if (msg.jobType === 'trash-sort') this.jobUI.showTrashSort((score) => this.sendGameMessage({ type: 'job-submit', jobType: 'trash-sort', score }), () => {});
+        else if (msg.jobType === 'lemonade') this.jobUI.showLemonade((score) => this.sendGameMessage({ type: 'job-submit', jobType: 'lemonade', score }), () => {});
+        break;
+      }
 
       default:
         console.log('[MoneyRoll] ws <-', msg);
@@ -471,7 +570,7 @@ export class WorldScene extends Phaser.Scene {
       vx *= inv; vy *= inv;
     }
 
-    const isSprinting = this.input.keyboard!.addKey('SHIFT').isDown && (vx !== 0 || vy !== 0) && !this.isExhausted;
+    const isSprinting = this.keyShift.isDown && (vx !== 0 || vy !== 0) && !this.isExhausted;
 
     // Hunger penalties
     const isStarving = this.hunger <= HUNGER_STARVING;
@@ -533,9 +632,6 @@ export class WorldScene extends Phaser.Scene {
     // Handle E key
     if (Phaser.Input.Keyboard.JustDown(this.keyE)) {
       this.handleEKeyPress();
-    } else {
-      this.usePrompt.setVisible(false);
-      this.playerMenu.hide();
     }
 
     // Autosave
@@ -551,6 +647,11 @@ export class WorldScene extends Phaser.Scene {
   private updateInteractionPrompt(): void {
     const entities = this.mapJson?.entities ? Object.values(this.mapJson.entities) : [];
     const result = this.interactionDetector.detectNearestInteractive(this.player.x, this.player.y, entities);
+    this.nearKioskId = result.nearestEntity?.type === 'kiosk' ? result.nearestEntity.id : null;
+    this.nearFoodCartEntity = result.nearestEntity?.type === 'food-cart' ? result.nearestEntity : null;
+    this.nearClothingShopEntity = result.nearestEntity?.type === 'clothing-shop' ? result.nearestEntity : null;
+    this.nearElectronicsShopEntity = result.nearestEntity?.type === 'electronics-shop' ? result.nearestEntity : null;
+    this.detectNearbyPlayer();
 
     const delivery = this.deliveryManager.getActiveTarget();
     const isNearDelivery = delivery && this.deliveryManager.isNearDeliveryTarget(this.player.x, this.player.y);
@@ -566,9 +667,18 @@ export class WorldScene extends Phaser.Scene {
       this.usePrompt.setPosition(result.targetX, result.targetY - PROMPT_OFFSET_Y);
       this.usePrompt.setText(this.getInteractionPromptText(result.nearestEntity));
       this.usePrompt.setVisible(true);
-    } else {
-      this.usePrompt.setVisible(false);
+      return;
     }
+
+    if (this.nearPlayerId) {
+      const target = this.remotes.sprites.get(this.nearPlayerId);
+      this.usePrompt.setPosition(target?.x ?? this.player.x, (target?.y ?? this.player.y) - PROMPT_OFFSET_Y);
+      this.usePrompt.setText('[E] Действия с игроком');
+      this.usePrompt.setVisible(true);
+      return;
+    }
+
+    this.usePrompt.setVisible(false);
   }
 
   private getInteractionPromptText(entity: MapEntity): string {
@@ -603,6 +713,10 @@ export class WorldScene extends Phaser.Scene {
     const { nearestEntity } = this.interactionDetector.detectNearestInteractive(this.player.x, this.player.y, entities);
 
     if (!nearestEntity) {
+      if (this.nearPlayerId) {
+        this.showPlayerInteractionMenu();
+        return;
+      }
       this.tryPickupNearbyBottle();
       return;
     }
@@ -753,7 +867,7 @@ export class WorldScene extends Phaser.Scene {
     const success = this.inventoryManager.swapSlots(fromSlot, toSlot);
     if (!success) return;
 
-    this.localInventory = [...this.inventoryManager['inventory']];
+    this.localInventory = this.inventoryManager.getSnapshot();
     this.currentWeight = this.inventoryManager.getCurrentWeight();
     this.refreshUI();
 
@@ -956,7 +1070,7 @@ export class WorldScene extends Phaser.Scene {
     this.equippedBag = itemType;
     this.backpackTier = bagToTier(itemType);
     this.inventoryManager.updateInventory(this.localInventory, this.backpackTier);
-    this.sendGameMessage({ type: 'upgrade-backpack', tier: this.backpackTier });
+    this.sendGameMessage({ type: 'equip-bag', slotIndex: slotIdx });
     SoundEffects.playUpgradeSound();
     this.refreshUI();
   }
@@ -980,7 +1094,7 @@ export class WorldScene extends Phaser.Scene {
     this.backpackTier = 1;
     this.localInventory[free] = bag;
     this.inventoryManager.updateInventory(this.localInventory, 1);
-    this.sendGameMessage({ type: 'upgrade-backpack', tier: 1 });
+    this.sendGameMessage({ type: 'unequip-bag' });
     SoundEffects.playUpgradeSound();
     this.refreshUI();
   }
@@ -1034,6 +1148,7 @@ export class WorldScene extends Phaser.Scene {
     img.setData('dropItem', item);
     this.bottlesMap.set(dropId, img);
 
+    this.sendGameMessage({ type: 'drop-item', slotIndex: slotIdx });
     SoundEffects.playPopSound();
     this.refreshUI();
     this.float(`Выброшено: ${getItemName(item)}`, this.player.x, this.player.y - 32, '#f87171');
@@ -1043,7 +1158,7 @@ export class WorldScene extends Phaser.Scene {
   //  SECTION: JOBS & PROPERTY
   // ============================================================
 
-  private completeNearbyJob(jobType: JobType, entity: MapEntity): void {
+  private completeNearbyJob(jobType: JobType, _entity: MapEntity): void {
     if (jobType === 'courier' && !this.licenses.courier) {
       this.float('Нужна лицензия курьера!', this.player.x, this.player.y - 30, '#fb923c');
       return;
@@ -1062,12 +1177,7 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
-    const finish = (score: number) => {
-      this.sendGameMessage({ type: 'job-submit', jobType, score });
-    };
-
-    if (jobType === 'trash-sort') this.jobUI.showTrashSort(finish, () => {});
-    else if (jobType === 'lemonade') this.jobUI.showLemonade(finish, () => {});
+    this.sendGameMessage({ type: 'job-start', jobType });
   }
 
   private handleCourierJob(): void {
@@ -1086,24 +1196,33 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
 
-    const entities = this.mapJson?.entities ? Object.values(this.mapJson.entities) : [];
-    const houses = entities.filter(e => ['apartment-1', 'apartment-2', 'building'].includes(e.type));
-    if (houses.length === 0) {
-      this.float('Нет домов на карте!', this.player.x, this.player.y - 25, '#f87171');
+    this.sendGameMessage({ type: 'job-start', jobType: 'courier' });
+    this.float('Запрашиваем заказ...', this.player.x, this.player.y - 25, '#60a5fa');
+  }
+
+  private startCourierFromServer(msg: NetcodeMessage): void {
+    const activeSlots = getActiveSlotsCount(this.backpackTier);
+    let free = -1;
+    for (let i = 0; i < activeSlots; i++) {
+      if (this.localInventory[i] === null) { free = i; break; }
+    }
+    if (free === -1) {
+      this.float('Инвентарь полон!', this.player.x, this.player.y - 25, '#f87171');
       return;
     }
 
-    const targetHouse = houses[Math.floor(Math.random() * houses.length)];
-    const tx = targetHouse.cellX * TILE_SIZE + TILE_SIZE_HALF;
-    const ty = targetHouse.cellY * TILE_SIZE + TILE_SIZE_HALF;
+    const taskData = msg.taskData as { target?: { cellX?: unknown; cellY?: unknown } } | undefined;
+    const target = taskData?.target;
+    if (!target || typeof target.cellX !== 'number' || typeof target.cellY !== 'number') {
+      this.float('Сервер не выдал адрес доставки', this.player.x, this.player.y - 25, '#f87171');
+      return;
+    }
 
     this.localInventory[free] = 'parcel';
     this.hasParcel = true;
     this.currentWeight = calculateInventoryWeight(this.localInventory);
     this.inventoryManager.updateInventory(this.localInventory);
-
-    this.deliveryManager.startDelivery({ cellX: targetHouse.cellX, cellY: targetHouse.cellY });
-
+    this.deliveryManager.startDelivery({ cellX: target.cellX, cellY: target.cellY });
     this.refreshUI();
     this.float('Взял посылку! Доставь в подсвеченный дом.', this.player.x, this.player.y - 32, '#4ade80');
     SoundEffects.playPopSound();
@@ -1303,5 +1422,4 @@ export class WorldScene extends Phaser.Scene {
     }
     return false;
   }
-}
 }
