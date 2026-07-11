@@ -1,40 +1,41 @@
 // ============================================================
-//  SECTION: ECONOMY HANDLERS (pickup / sell / shop / bags / jobs)
+//  SECTION: ECONOMY HANDLERS (server authoritative)
 // ============================================================
 
 import {
   BACKPACK_TIERS,
   BOTTLE_TYPES,
+  COURIER_RANKS,
+  FOOD_BUFF_SECS,
   FOOD_NAMES,
   FOOD_RESTORE,
-  FOOD_BUFF_SECS,
-  HUNGER_MAX,
   HUNGER_DRAIN_PER_SEC,
+  HUNGER_MAX,
   INVENTORY_SLOTS,
   JOB_REWARDS,
   PROPERTIES,
   PROPERTY_MAX_LEVEL,
   SHOP_PRICES,
-  COURIER_RANKS,
-  getCourierRank,
   TRAINING_COURSES,
+  TRASH_SORT_ITEMS,
   calculatePropertiesIncomePerMin,
+  getCourierRank,
   getPropertyIncomePerMin,
   getPropertyUpgradeCost,
-  type BottleType,
-  type FoodType,
   type InventoryItem,
   type JobType,
+  type OwnedProperty,
   type PropertyType,
   type ServerBottle,
   type ShopItemType,
-  type OwnedProperty,
 } from '../../../shared/economy.js';
 import {
   calculateInventoryWeight,
   getActiveSlotsCount,
   getMaxWeight,
   isBag,
+  isBottle,
+  isClothing,
   isFood,
   tierToBag,
 } from '../../../shared/items.js';
@@ -44,6 +45,8 @@ import type { Client, DeliveryPoint, ElectronicsShopPoint, JobPoint, PropertyPoi
 export type EconomyContext = {
   bottles: Map<string, ServerBottle>;
   kiosks: MapEntity[];
+  foodCarts: MapEntity[];
+  clothingShops: MapEntity[];
   jobPoints: JobPoint[];
   propertyPoints: PropertyPoint[];
   schoolPoints: SchoolPoint[];
@@ -54,22 +57,92 @@ export type EconomyContext = {
 };
 
 const INTERACT_DIST = 180;
+const MAX_ACTIVE_JOB_MS = 10 * 60_000;
 
 function send(c: Client, payload: object): void {
-  c.ws.send(JSON.stringify(payload));
+  if (c.ws.readyState === c.ws.OPEN) c.ws.send(JSON.stringify(payload));
 }
 
-function nearAnyKiosk(c: Client, kiosks: MapEntity[]): boolean {
-  for (const kiosk of kiosks) {
-    const kx = kiosk.cellX * TILE_SIZE + TILE_SIZE_HALF;
-    const ky = kiosk.cellY * TILE_SIZE + TILE_SIZE_HALF;
-    if (Math.hypot(c.x - kx, c.y - ky) < INTERACT_DIST) return true;
-  }
-  return false;
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
-function nearAnyElectronicsShop(c: Client, shops: ElectronicsShopPoint[]): boolean {
+function isValidSlot(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < INVENTORY_SLOTS;
+}
+
+function isActiveSlot(c: Client, slotIdx: number): boolean {
+  return slotIdx >= 0 && slotIdx < getActiveSlotsCount(c.backpackTier);
+}
+
+function roundMoney(value: number): number {
+  return Number(value.toFixed(2));
+}
+
+function distanceToEntity(c: Client, entity: MapEntity): number {
+  const x = entity.cellX * TILE_SIZE + TILE_SIZE_HALF;
+  const y = entity.cellY * TILE_SIZE + TILE_SIZE_HALF;
+  return Math.hypot(c.x - x, c.y - y);
+}
+
+function nearAnyEntity(c: Client, entities: readonly MapEntity[]): boolean {
+  return entities.some((entity) => distanceToEntity(c, entity) < INTERACT_DIST);
+}
+
+function nearAnyElectronicsShop(c: Client, shops: readonly ElectronicsShopPoint[]): boolean {
   return shops.some((shop) => Math.hypot(c.x - shop.x, c.y - shop.y) < INTERACT_DIST);
+}
+
+function nearJobPoint(c: Client, ctx: EconomyContext, jobType: JobType): boolean {
+  return ctx.jobPoints.some((point) => point.jobType === jobType && Math.hypot(c.x - point.x, c.y - point.y) < INTERACT_DIST);
+}
+
+function findFreeActiveSlot(c: Client): number {
+  const activeSlots = getActiveSlotsCount(c.backpackTier);
+  for (let i = 0; i < activeSlots; i++) {
+    if (c.inventory[i] === null) return i;
+  }
+  return -1;
+}
+
+function normalizeScore(value: unknown): number {
+  if (!isFiniteNumber(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+}
+
+function isShopItem(value: unknown): value is ShopItemType {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(SHOP_PRICES, value);
+}
+
+function assertShopLocation(c: Client, itemType: ShopItemType, ctx: EconomyContext): string | null {
+  if (itemType === 'phone') {
+    return nearAnyElectronicsShop(c, ctx.electronicsShops) ? null : 'Подойди к магазину электроники!';
+  }
+
+  if (isFood(itemType as InventoryItem)) {
+    return nearAnyEntity(c, ctx.foodCarts) ? null : 'Подойди к фуд-карту!';
+  }
+
+  if (itemType === 'bag-adidas' || itemType === 'backpack-tourist' || isClothing(itemType as InventoryItem) || itemType === 'jacket' || itemType === 'sneakers' || itemType === 'crown') {
+    return nearAnyEntity(c, ctx.clothingShops) ? null : 'Подойди к магазину одежды!';
+  }
+
+  return 'Этот предмет нельзя купить.';
+}
+
+function ensureActiveJob(c: Client, jobType: JobType): boolean {
+  if (!c.activeJob || c.activeJob.type !== jobType) return false;
+  const age = Date.now() - c.activeJob.startedAt;
+  return age >= 0 && age <= MAX_ACTIVE_JOB_MS;
+}
+
+function shuffle<T>(items: readonly T[]): T[] {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
 }
 
 // ============================================================
@@ -86,8 +159,7 @@ export function handlePickupBottle(c: Client, msg: WireMessage, ctx: EconomyCont
     return;
   }
 
-  const dist = Math.hypot(c.x - bottle.x, c.y - bottle.y);
-  if (dist > INTERACT_DIST) {
+  if (Math.hypot(c.x - bottle.x, c.y - bottle.y) > INTERACT_DIST) {
     send(c, { type: 'pickup-failed', bottleId, reason: 'too-far', message: 'Слишком далеко!' });
     return;
   }
@@ -101,7 +173,7 @@ export function handlePickupBottle(c: Client, msg: WireMessage, ctx: EconomyCont
     return;
   }
 
-  const emptySlotIdx = c.inventory.indexOf(null);
+  const emptySlotIdx = findFreeActiveSlot(c);
   if (emptySlotIdx === -1) {
     send(c, { type: 'pickup-failed', bottleId, reason: 'inventory-full', message: 'Инвентарь полон!' });
     return;
@@ -118,73 +190,121 @@ export function handlePickupBottle(c: Client, msg: WireMessage, ctx: EconomyCont
 }
 
 // ============================================================
-//  SECTION: SELL
+//  SECTION: SELL / INVENTORY
 // ============================================================
 
 export function handleSellSlot(c: Client, msg: WireMessage, ctx: EconomyContext): void {
   const slotIdx = msg.slotIndex;
-  if (typeof slotIdx !== 'number' || slotIdx < 0 || slotIdx >= INVENTORY_SLOTS) return;
+  if (!isValidSlot(slotIdx) || !isActiveSlot(c, slotIdx)) return;
 
-  const bottleType = c.inventory[slotIdx];
-  if (!bottleType) return;
+  const item = c.inventory[slotIdx];
+  if (!item) return;
 
-  if (isBag(bottleType) || isFood(bottleType)) {
+  if (!isBottle(item)) {
     send(c, { type: 'sell-failed', message: 'Автомат принимает только бутылки!' });
     return;
   }
 
-  if (!nearAnyKiosk(c, ctx.kiosks)) {
+  if (!nearAnyEntity(c, ctx.kiosks)) {
     send(c, { type: 'sell-failed', message: 'Ты должен стоять рядом с автоматом!' });
     return;
   }
 
-  const price = BOTTLE_TYPES[bottleType as BottleType].price;
-  c.money += price;
+  const price = BOTTLE_TYPES[item].price;
+  c.money = roundMoney(c.money + price);
   c.inventory[slotIdx] = null;
   const newWeight = calculateInventoryWeight(c.inventory);
   ctx.saveClient(c);
-  send(c, { type: 'sell-success', money: c.money, inventory: c.inventory, weight: newWeight, message: `Сдано: ${BOTTLE_TYPES[bottleType as BottleType].name}. Получено: $${price.toFixed(2)}` });
+  send(c, { type: 'sell-success', money: c.money, inventory: c.inventory, weight: newWeight, message: `Сдано: ${BOTTLE_TYPES[item].name}. Получено: $${price.toFixed(2)}` });
 }
 
 export function handleSellAll(c: Client, ctx: EconomyContext): void {
-  if (!nearAnyKiosk(c, ctx.kiosks)) {
+  if (!nearAnyEntity(c, ctx.kiosks)) {
     send(c, { type: 'sell-failed', message: 'Ты должен стоять рядом с автоматом!' });
     return;
   }
+
   let totalGain = 0;
   let soldCount = 0;
-  for (let i = 0; i < INVENTORY_SLOTS; i++) {
-    const type = c.inventory[i];
-    if (type && !isBag(type) && !isFood(type)) {
-      totalGain += BOTTLE_TYPES[type as BottleType].price;
+  const activeSlots = getActiveSlotsCount(c.backpackTier);
+  for (let i = 0; i < activeSlots; i++) {
+    const item = c.inventory[i];
+    if (item && isBottle(item)) {
+      totalGain += BOTTLE_TYPES[item].price;
       c.inventory[i] = null;
       soldCount++;
     }
   }
+
   if (soldCount === 0) {
     send(c, { type: 'sell-failed', message: 'У тебя нет бутылок для сдачи!' });
     return;
   }
-  c.money += totalGain;
+
+  c.money = roundMoney(c.money + totalGain);
   const newWeight = calculateInventoryWeight(c.inventory);
   ctx.saveClient(c);
   send(c, { type: 'sell-success', money: c.money, inventory: c.inventory, weight: newWeight, message: `Сдано бутылок: ${soldCount} шт. Получено: $${totalGain.toFixed(2)}!` });
 }
 
+export function handleInventorySwap(c: Client, msg: WireMessage, ctx: EconomyContext): void {
+  const from = msg.from;
+  const to = msg.to;
+  if (!isValidSlot(from) || !isValidSlot(to) || from === to) return;
+  if (!isActiveSlot(c, from) || !isActiveSlot(c, to)) return;
+
+  [c.inventory[from], c.inventory[to]] = [c.inventory[to], c.inventory[from]];
+  const weight = calculateInventoryWeight(c.inventory);
+  ctx.saveClient(c);
+  send(c, { type: 'inventory-sync', inventory: c.inventory, weight });
+}
+
+export function handleDropItem(c: Client, msg: WireMessage, ctx: EconomyContext): void {
+  const slotIdx = msg.slotIndex;
+  if (!isValidSlot(slotIdx) || !isActiveSlot(c, slotIdx)) return;
+
+  const item = c.inventory[slotIdx];
+  if (!item) return;
+  c.inventory[slotIdx] = null;
+
+  if (item === 'parcel' && c.activeJob?.type === 'courier') c.activeJob = null;
+
+  const weight = calculateInventoryWeight(c.inventory);
+  ctx.saveClient(c);
+  send(c, { type: 'drop-success', slotIndex: slotIdx, itemType: item, inventory: c.inventory, weight });
+}
+
 // ============================================================
-//  SECTION: SHOP
+//  SECTION: SHOP / FOOD / BAGS
 // ============================================================
 
 export function handleBuyShopItem(c: Client, msg: WireMessage, ctx: EconomyContext): void {
-  const itemType = msg.itemType as ShopItemType;
+  if (!isShopItem(msg.itemType)) {
+    send(c, { type: 'shop-failed', message: 'Товар не продаётся' });
+    return;
+  }
+
+  const itemType = msg.itemType;
   const cost = SHOP_PRICES[itemType];
-  if (!cost) { send(c, { type: 'shop-failed', message: 'Товар не продаётся' }); return; }
-  if (c.money < cost) { send(c, { type: 'shop-failed', message: 'Недостаточно денег!' }); return; }
+  if (!isFiniteNumber(cost) || cost <= 0) {
+    send(c, { type: 'shop-failed', message: 'Этот предмет нельзя купить.' });
+    return;
+  }
+
+  const locationError = assertShopLocation(c, itemType, ctx);
+  if (locationError) {
+    send(c, { type: 'shop-failed', message: locationError });
+    return;
+  }
+
+  if (c.money < cost) {
+    send(c, { type: 'shop-failed', message: 'Недостаточно денег!' });
+    return;
+  }
 
   if (itemType === 'phone') {
-    if (!nearAnyElectronicsShop(c, ctx.electronicsShops)) { send(c, { type: 'shop-failed', message: 'Подойди к магазину электроники!' }); return; }
     if (c.hasPhone) { send(c, { type: 'shop-failed', message: 'Телефон уже куплен' }); return; }
-    c.money -= cost;
+    c.money = roundMoney(c.money - cost);
     c.hasPhone = true;
     ctx.saveClient(c);
     send(c, { type: 'shop-success', itemType, money: c.money, hasPhone: c.hasPhone, message: 'Телефон куплен! Кнопка появилась рядом с инвентарём.' });
@@ -195,7 +315,7 @@ export function handleBuyShopItem(c: Client, msg: WireMessage, ctx: EconomyConte
     if (itemType === 'jacket' && c.hasJacket) { send(c, { type: 'shop-failed', message: 'Уже куплено' }); return; }
     if (itemType === 'sneakers' && c.hasSneakers) { send(c, { type: 'shop-failed', message: 'Уже куплено' }); return; }
     if (itemType === 'crown' && c.hasCrown) { send(c, { type: 'shop-failed', message: 'Уже куплено' }); return; }
-    c.money -= cost;
+    c.money = roundMoney(c.money - cost);
     if (itemType === 'jacket') c.hasJacket = true;
     if (itemType === 'sneakers') c.hasSneakers = true;
     if (itemType === 'crown') c.hasCrown = true;
@@ -204,12 +324,18 @@ export function handleBuyShopItem(c: Client, msg: WireMessage, ctx: EconomyConte
     return;
   }
 
-  const activeSlots = getActiveSlotsCount(c.backpackTier);
-  let freeSlot = -1;
-  for (let i = 0; i < activeSlots; i++) { if (c.inventory[i] === null) { freeSlot = i; break; } }
+  const freeSlot = findFreeActiveSlot(c);
   if (freeSlot === -1) { send(c, { type: 'shop-failed', message: 'Инвентарь полон!' }); return; }
 
-  c.money -= cost;
+  const itemWeight = isFood(itemType as InventoryItem) || isBag(itemType as InventoryItem) || isClothing(itemType as InventoryItem)
+    ? calculateInventoryWeight([itemType as InventoryItem])
+    : 0;
+  if (calculateInventoryWeight(c.inventory) + itemWeight > getMaxWeight(c.backpackTier)) {
+    send(c, { type: 'shop-failed', message: `Превышен вес! Максимум: ${getMaxWeight(c.backpackTier)}кг` });
+    return;
+  }
+
+  c.money = roundMoney(c.money - cost);
   c.inventory[freeSlot] = itemType as InventoryItem;
   const weight = calculateInventoryWeight(c.inventory);
   ctx.saveClient(c);
@@ -217,12 +343,12 @@ export function handleBuyShopItem(c: Client, msg: WireMessage, ctx: EconomyConte
 }
 
 export function handleUseItem(c: Client, msg: WireMessage, ctx: EconomyContext): void {
-  const slotIdx = msg.slotIndex as number;
-  if (typeof slotIdx !== 'number' || slotIdx < 0 || slotIdx >= INVENTORY_SLOTS) return;
+  const slotIdx = msg.slotIndex;
+  if (!isValidSlot(slotIdx) || !isActiveSlot(c, slotIdx)) return;
   const item = c.inventory[slotIdx];
   if (!item || !isFood(item)) return;
 
-  const restore = FOOD_RESTORE[item as FoodType] ?? 20;
+  const restore = FOOD_RESTORE[item] ?? 20;
   c.hunger = Math.min(HUNGER_MAX, c.hunger + restore);
   c.inventory[slotIdx] = null;
 
@@ -233,22 +359,20 @@ export function handleUseItem(c: Client, msg: WireMessage, ctx: EconomyContext):
     inventory: c.inventory,
     weight: calculateInventoryWeight(c.inventory),
     hunger: c.hunger,
-    buffDuration: FOOD_BUFF_SECS[item as FoodType] ?? 20,
-    message: `Съедено: ${FOOD_NAMES[item as FoodType]}! Восстановлено: +${restore} сытости`,
+    buffDuration: FOOD_BUFF_SECS[item] ?? 20,
+    message: `Съедено: ${FOOD_NAMES[item]}! Восстановлено: +${restore} сытости`,
   });
 }
 
-// ============================================================
-//  SECTION: BAG EQUIP
-// ============================================================
-
 export function handleEquipBag(c: Client, msg: WireMessage, ctx: EconomyContext): void {
-  const slotIdx = msg.slotIndex as number;
-  if (typeof slotIdx !== 'number') return;
+  const slotIdx = msg.slotIndex;
+  if (!isValidSlot(slotIdx) || !isActiveSlot(c, slotIdx)) return;
   const item = c.inventory[slotIdx];
   if (item !== 'bag-adidas' && item !== 'backpack-tourist') return;
+
   const tier = item === 'bag-adidas' ? 2 : 3;
   if (c.backpackTier >= tier) { send(c, { type: 'equip-failed', message: 'Уже есть лучше' }); return; }
+
   c.inventory[slotIdx] = null;
   c.backpackTier = tier;
   ctx.saveClient(c);
@@ -258,10 +382,12 @@ export function handleEquipBag(c: Client, msg: WireMessage, ctx: EconomyContext)
 export function handleUnequipBag(c: Client, ctx: EconomyContext): void {
   if (c.backpackTier === 1) return;
   const weight = calculateInventoryWeight(c.inventory);
-  if (weight > BACKPACK_TIERS[1].maxWeight) { send(c, { type: 'equip-failed', message: 'Разгрузи рюкзак до 2.5кг!' }); return; }
+  if (weight > BACKPACK_TIERS[1].maxWeight) { send(c, { type: 'equip-failed', message: 'Разгрузи рюкзак до 5кг!' }); return; }
+
   let freeSlot = -1;
-  for (let i = 0; i < 4; i++) { if (c.inventory[i] === null) { freeSlot = i; break; } }
+  for (let i = 0; i < getActiveSlotsCount(1); i++) { if (c.inventory[i] === null) { freeSlot = i; break; } }
   if (freeSlot === -1) { send(c, { type: 'equip-failed', message: 'Освободи карманы!' }); return; }
+
   const bagItem = tierToBag(c.backpackTier);
   if (!bagItem) return;
   c.inventory[freeSlot] = bagItem;
@@ -270,9 +396,50 @@ export function handleUnequipBag(c: Client, ctx: EconomyContext): void {
   send(c, { type: 'equip-success', backpackTier: 1, inventory: c.inventory, weight: calculateInventoryWeight(c.inventory), message: 'Сумка снята' });
 }
 
+export function handleUpgradeBackpack(c: Client): void {
+  send(c, { type: 'upgrade-failed', message: 'Прямой апгрейд рюкзака запрещён. Используй предмет сумки.' });
+}
+
 // ============================================================
-//  SECTION: JOBS & PROPERTY
+//  SECTION: JOBS & TRAINING
 // ============================================================
+
+export function handleJobStart(c: Client, msg: WireMessage, ctx: EconomyContext): void {
+  const jobType = msg.jobType as JobType;
+  if (!JOB_REWARDS[jobType]) return;
+
+  if (c.activeJob) {
+    send(c, { type: 'job-failed', message: 'Сначала заверши текущую работу!' });
+    return;
+  }
+
+  if (!nearJobPoint(c, ctx, jobType)) {
+    send(c, { type: 'job-failed', message: 'Подойди к месту работы!' });
+    return;
+  }
+
+  if (jobType === 'courier' && !c.licenses.courier) { send(c, { type: 'job-failed', message: 'Сначала получи лицензию в Школе Курьеров!' }); return; }
+  if (jobType === 'trash-sort' && !c.licenses.trashSort) { send(c, { type: 'job-failed', message: 'Нужен сертификат сортировщика!' }); return; }
+  if (jobType === 'lemonade' && !c.licenses.lemonadeBusiness) { send(c, { type: 'job-failed', message: 'Нужно образование продавца лимонада! Иди в школу.' }); return; }
+
+  let taskData: Record<string, unknown> = {};
+  if (jobType === 'trash-sort') {
+    taskData = { items: shuffle(TRASH_SORT_ITEMS).slice(0, 8), timeLimit: 25 };
+  } else if (jobType === 'courier') {
+    if (ctx.deliveryHouses.length === 0) {
+      send(c, { type: 'job-failed', message: 'Нет домов для доставки на карте!' });
+      return;
+    }
+    const target = ctx.deliveryHouses[Math.floor(Math.random() * ctx.deliveryHouses.length)];
+    taskData = { target: { id: target.id, x: target.x, y: target.y, cellX: target.cellX, cellY: target.cellY }, deliveries: 1 };
+  } else if (jobType === 'lemonade') {
+    taskData = { beats: 12, bpm: 110 + Math.floor(Math.random() * 30), recipe: 'classic' };
+  }
+
+  c.activeJob = { type: jobType, startedAt: Date.now(), data: taskData };
+  ctx.saveClient(c);
+  send(c, { type: 'job-started', jobType, taskData, skill: c.jobSkills[jobType] });
+}
 
 export function handleJobComplete(c: Client, msg: WireMessage, ctx: EconomyContext): void {
   const jobType = msg.jobType as JobType;
@@ -285,32 +452,17 @@ export function handleJobComplete(c: Client, msg: WireMessage, ctx: EconomyConte
     return;
   }
 
-  let near = false;
+  if (!ensureActiveJob(c, jobType)) {
+    c.activeJob = null;
+    send(c, { type: 'job-failed', message: 'Работа не начата или устарела.' });
+    return;
+  }
 
-  // For courier: check if near ANY apartment (delivery house)
+  let near = false;
   if (jobType === 'courier') {
-    // Check near courier hub for starting, OR near any apartment for delivering
-    for (const jp of ctx.jobPoints) {
-      if (jp.jobType !== 'courier') continue;
-      if (Math.hypot(c.x - jp.x, c.y - jp.y) < INTERACT_DIST) {
-        near = true;
-        break;
-      }
-    }
-    // Also check near delivery houses
-    if (!near) {
-      for (const dh of ctx.deliveryHouses) {
-        if (Math.hypot(c.x - dh.x, c.y - dh.y) < INTERACT_DIST) {
-          near = true;
-          break;
-        }
-      }
-    }
+    near = ctx.deliveryHouses.some((house) => Math.hypot(c.x - house.x, c.y - house.y) < INTERACT_DIST);
   } else {
-    for (const jp of ctx.jobPoints) {
-      if (jp.jobType !== jobType) continue;
-      if (Math.hypot(c.x - jp.x, c.y - jp.y) < INTERACT_DIST) { near = true; break; }
-    }
+    near = nearJobPoint(c, ctx, jobType);
   }
 
   if (!near) {
@@ -318,27 +470,15 @@ export function handleJobComplete(c: Client, msg: WireMessage, ctx: EconomyConte
     return;
   }
 
-  // License checks
-  if (jobType === 'courier' && !c.licenses.courier) {
-    send(c, { type: 'job-failed', message: 'Нужна лицензия курьера! Сходи в Школу Курьеров ($25)' });
-    return;
-  }
-  if (jobType === 'trash-sort' && !c.licenses.trashSort) {
-    send(c, { type: 'job-failed', message: 'Нужен сертификат сортировщика! Школа экологии ($15)' });
-    return;
-  }
-  if (jobType === 'lemonade' && !c.licenses.lemonadeBusiness) {
-    send(c, { type: 'job-failed', message: 'Нужно образование продавца лимонада! Иди в школу.' });
-    return;
-  }
+  if (jobType === 'courier' && !c.licenses.courier) { send(c, { type: 'job-failed', message: 'Нужна лицензия курьера! Сходи в Школу Курьеров ($25)' }); return; }
+  if (jobType === 'trash-sort' && !c.licenses.trashSort) { send(c, { type: 'job-failed', message: 'Нужен сертификат сортировщика! Школа экологии ($15)' }); return; }
+  if (jobType === 'lemonade' && !c.licenses.lemonadeBusiness) { send(c, { type: 'job-failed', message: 'Нужно образование продавца лимонада! Иди в школу.' }); return; }
 
   c.lastJobAt[jobType] = now;
-
-  const clientScore = typeof msg.score === 'number' && Number.isFinite(msg.score)
-    ? Math.max(0, Math.min(100, msg.score))
-    : 0;
+  const clientScore = normalizeScore(msg.score);
 
   if (jobType === 'lemonade' && clientScore <= 0) {
+    c.activeJob = null;
     ctx.saveClient(c);
     send(c, { type: 'job-failed', message: 'Промах! Лимонад не продан. Следующая попытка через 60 секунд.' });
     return;
@@ -360,7 +500,7 @@ export function handleJobComplete(c: Client, msg: WireMessage, ctx: EconomyConte
   let reward = baseReward * skillBonus * rankMultiplier;
   if (accuracy >= 0.95) reward *= 1.25;
   if (accuracy < 0.6) reward *= 0.7;
-  reward = parseFloat(reward.toFixed(2));
+  reward = roundMoney(reward);
 
   const xpGain = Math.round(job.baseXp * (0.5 + accuracy));
   skill.xp += xpGain;
@@ -374,7 +514,8 @@ export function handleJobComplete(c: Client, msg: WireMessage, ctx: EconomyConte
   }
   c.jobSkills[jobType] = skill;
 
-  c.money = parseFloat((c.money + reward).toFixed(2));
+  c.money = roundMoney(c.money + reward);
+  c.activeJob = null;
   ctx.saveClient(c);
 
   const messages: Record<JobType, string> = {
@@ -390,33 +531,31 @@ export function handleJobComplete(c: Client, msg: WireMessage, ctx: EconomyConte
 }
 
 export function handleTrainingBuy(c: Client, msg: WireMessage, ctx: EconomyContext): void {
-  const atSchool = ctx.schoolPoints.some(
-    (school) => Math.hypot(c.x - school.x, c.y - school.y) < INTERACT_DIST,
-  );
+  const atSchool = ctx.schoolPoints.some((school) => Math.hypot(c.x - school.x, c.y - school.y) < INTERACT_DIST);
   if (!atSchool) { send(c, { type: 'training-failed', message: 'Подойди к зданию школы профессий.' }); return; }
 
-  const courseId = msg.courseId as string;
-  const course = TRAINING_COURSES.find(tc => tc.id === courseId);
+  const courseId = msg.courseId;
+  if (typeof courseId !== 'string') { send(c, { type: 'training-failed', message: 'Курс не найден' }); return; }
+  const course = TRAINING_COURSES.find((candidate) => candidate.id === courseId);
   if (!course) { send(c, { type: 'training-failed', message: 'Курс не найден' }); return; }
   if (c.trainingCompleted.includes(courseId)) { send(c, { type: 'training-failed', message: 'Курс уже пройден' }); return; }
   if (c.money < course.cost) { send(c, { type: 'training-failed', message: `Нужно $${course.cost}, у тебя $${c.money.toFixed(2)}` }); return; }
 
-  let meetsLevel = true;
-  for (const [jt] of Object.entries(course.skillBoost)) {
+  const meetsLevel = Object.keys(course.skillBoost).every((jt) => {
     const s = c.jobSkills[jt as JobType];
-    if (s && s.level < course.requiredLevel) meetsLevel = false;
-  }
+    return !s || s.level >= course.requiredLevel;
+  });
   if (!meetsLevel) { send(c, { type: 'training-failed', message: `Нужен уровень ${course.requiredLevel} для этого курса` }); return; }
 
-  c.money -= course.cost;
+  c.money = roundMoney(c.money - course.cost);
   c.trainingCompleted.push(courseId);
   if (course.unlocks.includes('courier_license')) c.licenses.courier = true;
   if (course.unlocks.includes('trash_cert')) c.licenses.trashSort = true;
-  if (course.unlocks.includes('lemonade_stand_purchase')) c.licenses.lemonadeBusiness = true;
+  if (course.unlocks.includes('lemonade_stand_purchase') || course.unlocks.includes('lemonade_license')) c.licenses.lemonadeBusiness = true;
 
   for (const [jt, boost] of Object.entries(course.skillBoost)) {
     const sk = c.jobSkills[jt as JobType];
-    if (sk) { sk.level = Math.min(10, sk.level + (boost as number)); sk.xp = 0; }
+    if (sk) { sk.level = Math.min(10, sk.level + boost); sk.xp = 0; }
   }
 
   ctx.saveClient(c);
@@ -427,39 +566,13 @@ export function handleTrainingBuy(c: Client, msg: WireMessage, ctx: EconomyConte
   });
 }
 
-export function handleJobStart(c: Client, msg: WireMessage, _ctx: EconomyContext): void {
-  const jobType = msg.jobType as JobType;
-  if (!JOB_REWARDS[jobType]) return;
-
-  if (jobType === 'courier' && !c.licenses.courier) { send(c, { type: 'job-failed', message: 'Сначала получи лицензию в Школе Курьеров!' }); return; }
-  if (jobType === 'trash-sort' && !c.licenses.trashSort) { send(c, { type: 'job-failed', message: 'Нужен сертификат сортировщика!' }); return; }
-  if (jobType === 'lemonade' && !c.licenses.lemonadeBusiness) { send(c, { type: 'job-failed', message: 'Нужно образование продавца лимонада! Иди в школу.' }); return; }
-
-  let taskData: any = {};
-  if (jobType === 'trash-sort') {
-    const { TRASH_SORT_ITEMS } = require('../../../shared/economy.js');
-    const shuffled = [...TRASH_SORT_ITEMS].sort(() => Math.random() - 0.5).slice(0, 8);
-    taskData = { items: shuffled, timeLimit: 25 };
-  } else if (jobType === 'courier') {
-    const districts = ['center', 'industrial', 'residential', 'business'];
-    const packages = Array.from({ length: 5 }, (_, i) => ({
-      id: i,
-      address: `${Math.floor(Math.random()*99)+1} ${['ул. Ленина','ул. Мира','ул. Победы','ул. Гагарина'][Math.floor(Math.random()*4)]}`,
-      district: districts[Math.floor(Math.random()*districts.length)],
-      fragile: Math.random() > 0.7,
-    }));
-    taskData = { packages, deliveries: 3 };
-  } else if (jobType === 'lemonade') {
-    taskData = { beats: 12, bpm: 110 + Math.floor(Math.random()*30), recipe: 'classic' };
-  }
-
-  c.activeJob = { type: jobType, startedAt: Date.now(), data: taskData };
-  send(c, { type: 'job-started', jobType, taskData, skill: c.jobSkills[jobType] });
-}
+// ============================================================
+//  SECTION: PROPERTY
+// ============================================================
 
 export function handleBuyProperty(c: Client, msg: WireMessage, ctx: EconomyContext): void {
   const propertyType = msg.propertyType as PropertyType;
-  const propertyPointId = msg.propertyPointId as string | undefined;
+  const propertyPointId = typeof msg.propertyPointId === 'string' ? msg.propertyPointId : undefined;
   const def = PROPERTIES[propertyType];
   if (!def) return;
 
@@ -478,7 +591,7 @@ export function handleBuyProperty(c: Client, msg: WireMessage, ctx: EconomyConte
 
   if (c.money < def.price) { send(c, { type: 'property-failed', message: 'Недостаточно денег!' }); return; }
 
-  c.money = parseFloat((c.money - def.price).toFixed(2));
+  c.money = roundMoney(c.money - def.price);
   const owned: OwnedProperty = {
     id: point.id,
     type: propertyType,
@@ -490,7 +603,6 @@ export function handleBuyProperty(c: Client, msg: WireMessage, ctx: EconomyConte
   ctx.saveClient(c);
 
   const totalIncome = calculatePropertiesIncomePerMin(c.properties);
-
   send(c, {
     type: 'property-success', propertyType, propertyPointId: point.id, money: c.money, properties: c.properties,
     message: `Куплено: ${def.name}! LVL 1/${PROPERTY_MAX_LEVEL}. Пассивный доход: +$${totalIncome.toFixed(2)}/мин`,
@@ -498,7 +610,7 @@ export function handleBuyProperty(c: Client, msg: WireMessage, ctx: EconomyConte
 }
 
 export function handleUpgradeProperty(c: Client, msg: WireMessage, ctx: EconomyContext): void {
-  const propertyId = msg.propertyId as string;
+  const propertyId = msg.propertyId;
   if (typeof propertyId !== 'string') return;
 
   const property = c.properties.find((candidate) => candidate.id === propertyId || candidate.propertyPointId === propertyId);
@@ -510,7 +622,7 @@ export function handleUpgradeProperty(c: Client, msg: WireMessage, ctx: EconomyC
   const cost = getPropertyUpgradeCost(property);
   if (c.money < cost) { send(c, { type: 'property-upgrade-failed', message: `Нужно $${cost}, у тебя $${c.money.toFixed(2)}` }); return; }
 
-  c.money = parseFloat((c.money - cost).toFixed(2));
+  c.money = roundMoney(c.money - cost);
   property.level += 1;
   ctx.saveClient(c);
 
@@ -526,20 +638,12 @@ export function handleUpgradeProperty(c: Client, msg: WireMessage, ctx: EconomyC
   });
 }
 
-export function handleUpgradeBackpack(c: Client, msg: WireMessage, ctx: EconomyContext): void {
-  const tier = msg.tier;
-  if (typeof tier !== 'number' || tier < 1 || tier > 3) return;
-  c.backpackTier = tier;
-  ctx.saveClient(c);
-  send(c, { type: 'upgrade-success', backpackTier: c.backpackTier, money: c.money, weight: calculateInventoryWeight(c.inventory), message: `Тир рюкзака: ${tier}` });
-}
-
 // ============================================================
 //  SECTION: HUNGER TICK (called from World)
 // ============================================================
 
 export function tickHunger(c: Client, _ctx: EconomyContext): void {
   if (c.hunger > 0) {
-    c.hunger = Math.max(0, parseFloat((c.hunger - HUNGER_DRAIN_PER_SEC * 0.25).toFixed(1)));
+    c.hunger = Math.max(0, Number((c.hunger - HUNGER_DRAIN_PER_SEC * 0.25).toFixed(1)));
   }
 }

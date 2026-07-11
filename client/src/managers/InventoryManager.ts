@@ -1,7 +1,7 @@
 import { 
   calculateInventoryWeight, 
-  getActiveSlotsCount, 
-  getItemWeight 
+  getActiveSlotsCount,
+  getMaxWeight
 } from '../../../shared/items';
 import type { InventoryItem } from '../../../shared/economy';
 
@@ -38,7 +38,11 @@ export class InventoryManager {
   }
 
   getMaxWeight(): number {
-    return getActiveSlotsCount(this.backpackTier) * 2.5; // approximate
+    return getMaxWeight(this.backpackTier);
+  }
+
+  getSnapshot(): (InventoryItem | null)[] {
+    return [...this.inventory];
   }
 
   hasItem(item: InventoryItem): boolean {

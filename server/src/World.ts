@@ -40,6 +40,8 @@ import {
   handlePickupBottle,
   handleSellAll,
   handleSellSlot,
+  handleInventorySwap,
+  handleDropItem,
   handleUnequipBag,
   handleUpgradeBackpack,
   handleUpgradeProperty,
@@ -48,9 +50,12 @@ import {
   type EconomyContext,
 } from './handlers/economyHandlers.js';
 import {
+  createPendingTradeOffer,
   handlePlayerInteraction,
   handleTradeAccept,
   handleTradeDecline,
+  isTradeOfferExpired,
+  type PendingTradeOffer,
   type InteractionContext,
 } from './handlers/interactionHandlers.js';
 import { PlayerStore } from './PlayerStore.js';
@@ -65,11 +70,14 @@ export class World {
   private map: MapDocument | null = null;
   private spawners: MapEntity[] = [];
   private kiosks: MapEntity[] = [];
+  private foodCarts: MapEntity[] = [];
+  private clothingShops: MapEntity[] = [];
   private jobPoints: JobPoint[] = [];
   private propertyPoints: PropertyPoint[] = [];
   private schoolPoints: SchoolPoint[] = [];
   private electronicsShops: ElectronicsShopPoint[] = [];
   private deliveryHouses: DeliveryPoint[] = [];
+  private pendingTrades = new Map<string, PendingTradeOffer>();
   private spawnerIntervals: NodeJS.Timeout[] = [];
   private passiveIncomeTimer?: NodeJS.Timeout;
   private hungerTimer?: NodeJS.Timeout;
@@ -95,6 +103,8 @@ export class World {
     this.bottles.clear();
     this.spawners = [];
     this.kiosks = [];
+    this.foodCarts = [];
+    this.clothingShops = [];
     this.jobPoints = [];
     this.propertyPoints = [];
     this.schoolPoints = [];
@@ -109,6 +119,10 @@ export class World {
         this.spawners.push(entity);
       } else if (entityType === 'kiosk') {
         this.kiosks.push(entity);
+      } else if (entityType === 'food-cart') {
+        this.foodCarts.push(entity);
+      } else if (entityType === 'clothing-shop') {
+        this.clothingShops.push(entity);
       } else if (entityType === 'school') {
         this.schoolPoints.push({ id: entity.id, x: entity.cellX * TILE_SIZE + TILE_SIZE_HALF, y: entity.cellY * TILE_SIZE + TILE_SIZE_HALF });
       } else if (entityType === 'electronics-shop') {
@@ -132,7 +146,7 @@ export class World {
       }
     }
 
-    console.log(`[MoneyRoll][World] Карта загружена: спавнеров: ${this.spawners.length}, киосков: ${this.kiosks.length}, работ: ${this.jobPoints.length}, недвижимости: ${this.propertyPoints.length}, домов для доставки: ${this.deliveryHouses.length}`);
+    console.log(`[MoneyRoll][World] Карта загружена: спавнеров: ${this.spawners.length}, киосков: ${this.kiosks.length}, фуд-картов: ${this.foodCarts.length}, магазинов одежды: ${this.clothingShops.length}, работ: ${this.jobPoints.length}, недвижимости: ${this.propertyPoints.length}, домов для доставки: ${this.deliveryHouses.length}`);
 
     for (const spawner of this.spawners) {
       const intervalMs = (spawner.properties.spawnInterval ?? 15) * 1000;
@@ -288,10 +302,16 @@ export class World {
   getKiosks(): MapEntity[] { return this.kiosks; }
   getClient(id: string): Client | undefined { return this.clients.get(id); }
 
+  private isValidPlayerToken(token: unknown): token is string {
+    return typeof token === 'string' && token.length >= 12 && token.length <= 128 && /^[a-zA-Z0-9_.:-]+$/.test(token);
+  }
+
   private economyCtx(): EconomyContext {
     return {
       bottles: this.bottles,
       kiosks: this.kiosks,
+      foodCarts: this.foodCarts,
+      clothingShops: this.clothingShops,
       jobPoints: this.jobPoints,
       propertyPoints: this.propertyPoints,
       schoolPoints: this.schoolPoints,
@@ -303,7 +323,37 @@ export class World {
   }
 
   private interactionCtx(): InteractionContext {
-    return { getClient: (id) => this.clients.get(id), saveClient: (c) => this.playerStore.saveClient(c) };
+    this.pruneExpiredTradeOffers();
+    return {
+      getClient: (id) => this.clients.get(id),
+      saveClient: (c) => this.playerStore.saveClient(c),
+      createTradeOffer: (offer) => {
+        const pending = createPendingTradeOffer(offer);
+        this.pendingTrades.set(pending.id, pending);
+        return pending;
+      },
+      consumeTradeOffer: (offerId, toId) => {
+        const offer = this.pendingTrades.get(offerId);
+        if (!offer || offer.toId !== toId || isTradeOfferExpired(offer)) {
+          if (offer) this.pendingTrades.delete(offerId);
+          return null;
+        }
+        this.pendingTrades.delete(offerId);
+        return offer;
+      },
+      removeTradeOffer: (offerId, toId) => {
+        const offer = this.pendingTrades.get(offerId);
+        if (!offer || offer.toId !== toId) return null;
+        this.pendingTrades.delete(offerId);
+        return offer;
+      },
+    };
+  }
+
+  private pruneExpiredTradeOffers(): void {
+    for (const [id, offer] of this.pendingTrades) {
+      if (isTradeOfferExpired(offer)) this.pendingTrades.delete(id);
+    }
   }
 
   // ============================================================
@@ -319,7 +369,11 @@ export class World {
 
     switch (msg.type) {
       case 'auth': {
-        const token = typeof msg.token === 'string' ? msg.token : null;
+        const token = this.isValidPlayerToken(msg.token) ? msg.token : null;
+        if (msg.token !== undefined && !token) {
+          c.ws.send(JSON.stringify({ type: 'auth-failed', message: 'Некорректный токен игрока.' }));
+          break;
+        }
         if (token && token !== c.playerToken) {
           const save = this.playerStore.get(token);
           if (save) {
@@ -351,14 +405,20 @@ export class World {
         break;
       }
       case 'move': {
-        if (typeof msg.x === 'number') c.x = msg.x;
-        if (typeof msg.y === 'number') c.y = msg.y;
+        if (typeof msg.x === 'number' && Number.isFinite(msg.x)) {
+          c.x = Math.max(0, Math.min(MAP_WIDTH * TILE_SIZE, msg.x));
+        }
+        if (typeof msg.y === 'number' && Number.isFinite(msg.y)) {
+          c.y = Math.max(0, Math.min(MAP_HEIGHT * TILE_SIZE, msg.y));
+        }
         this.broadcastExcept(fromId, { type: 'peer', id: fromId, x: c.x, y: c.y });
         break;
       }
       case 'pickup-bottle': handlePickupBottle(c, msg, eco); break;
       case 'sell-slot': handleSellSlot(c, msg, eco); break;
       case 'sell-all-bottles': handleSellAll(c, eco); break;
+      case 'inventory-swap': handleInventorySwap(c, msg, eco); break;
+      case 'drop-item': handleDropItem(c, msg, eco); break;
       case 'buy-shop-item': handleBuyShopItem(c, msg, eco); break;
       case 'use-item': handleUseItem(c, msg, eco); break;
       case 'equip-bag': handleEquipBag(c, msg, eco); break;
@@ -369,7 +429,7 @@ export class World {
       case 'training-buy': handleTrainingBuy(c, msg, eco); break;
       case 'buy-property': handleBuyProperty(c, msg, eco); break;
       case 'upgrade-property': handleUpgradeProperty(c, msg, eco); break;
-      case 'upgrade-backpack': handleUpgradeBackpack(c, msg, eco); break;
+      case 'upgrade-backpack': handleUpgradeBackpack(c); break;
       case 'buy-food':
         this.handle(fromId, { type: 'buy-shop-item', itemType: msg.itemType });
         break;

@@ -13,7 +13,7 @@ export interface InteractionResult {
 export class InteractionDetector {
   private readonly INTERACT_RADIUS = 180;
 
-  constructor(private scene: Phaser.Scene) {}
+  constructor(_scene?: Phaser.Scene) {}
 
   detectNearestInteractive(
     playerX: number,

@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import { TILE_SIZE, TILE_SIZE_HALF } from '../../../shared/map';
-import type { MapDocument } from '../../../shared/map';
 
 export class DeliveryManager {
   private activeDeliveryTarget: { x: number; y: number; key: string } | null = null;
