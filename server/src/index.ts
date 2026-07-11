@@ -30,7 +30,7 @@ const DATA_DIR = path.resolve('data');
 const MAP_FILE = path.join(DATA_DIR, 'map.json');
 const SNAPSHOT_TICK_MS = 50; // 20 Hz
 const MAX_WS_MESSAGE_BYTES = 16 * 1024;
-const MAX_WS_MESSAGES_PER_WINDOW = 80;
+const MAX_WS_MESSAGES_PER_WINDOW = 500;
 const WS_RATE_WINDOW_MS = 10_000;
 const allowedCorsOrigins = (process.env.CORS_ORIGIN ?? '')
   .split(',')

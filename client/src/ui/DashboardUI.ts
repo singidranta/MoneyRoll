@@ -18,13 +18,13 @@ import { BOTTLE_TYPES, type BottleType, HUNGER_MAX, HUNGER_CRITICAL } from '../.
 
 const FOOD_ITEMS: { key: string; name: string; cost: number; path: string; desc: string }[] = [
   { key: 'shawarma', name: 'Шаурма', cost: 1.5, path: '/assets/props/flat/food/shawarma.webp', desc: '+35 сытости, буст бега' },
-  { key: 'hotdog', name: 'Хот-дог', cost: 2.0, path: '/assets/props/flat/food/hotdog.webp', desc: '+20 сытости' },
-  { key: 'salad', name: 'Салат', cost: 2.5, path: '/assets/props/flat/food/salad.webp', desc: '+15 сытости, лёгкая' },
+  { key: 'hotdog', name: 'Хот-дог', cost: 2.0, path: '/assets/props/flat/food/hotdog.png', desc: '+20 сытости' },
+  { key: 'salad', name: 'Салат', cost: 2.5, path: '/assets/props/flat/food/salad.png', desc: '+15 сытости, лёгкая' },
   { key: 'energy', name: 'Энергетик', cost: 3.0, path: '/assets/props/flat/food/energy-drink.webp', desc: '+5 сытости, скорость 30с' },
-  { key: 'ramen', name: 'Рамен', cost: 3.5, path: '/assets/props/flat/food/ramen.webp', desc: '+30 сытости, горячий' },
-  { key: 'sushi', name: 'Суши', cost: 4.5, path: '/assets/props/flat/food/sushi.webp', desc: '+25 сытости, премиум' },
-  { key: 'pizza', name: 'Пицца', cost: 5.0, path: '/assets/props/flat/food/pizza.webp', desc: '+40 сытости, сытная' },
-  { key: 'steak', name: 'Стейк', cost: 7.0, path: '/assets/props/flat/food/steak.webp', desc: '+50 сытости, королевский' },
+  { key: 'ramen', name: 'Рамен', cost: 3.5, path: '/assets/props/flat/food/ramen.png', desc: '+30 сытости, горячий' },
+  { key: 'sushi', name: 'Суши', cost: 4.5, path: '/assets/props/flat/food/sushi.png', desc: '+25 сытости, премиум' },
+  { key: 'pizza', name: 'Пицца', cost: 5.0, path: '/assets/props/flat/food/pizza.png', desc: '+40 сытости, сытная' },
+  { key: 'steak', name: 'Стейк', cost: 7.0, path: '/assets/props/flat/food/steak.png', desc: '+50 сытости, королевский' },
 ];
 
 // ============================================================
