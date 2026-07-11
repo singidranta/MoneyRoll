@@ -400,6 +400,7 @@ export class World {
           equipment: c.equipment,
           properties: c.properties, jobSkills: c.jobSkills, licenses: c.licenses,
           trainingCompleted: c.trainingCompleted, hunger: c.hunger,
+          activeJob: c.activeJob,
           players: this.snapshot(fromId), bottles: this.getBottles(),
         }));
         break;
