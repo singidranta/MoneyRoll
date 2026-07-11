@@ -79,14 +79,21 @@ export class PreloadScene extends Phaser.Scene {
     this.load.image('trash-sort-station', '/assets/props/flat/kiosk/trash-sort-station.webp');
     this.load.image('lemonade-stand', '/assets/props/flat/kiosk/lemonade-stand.webp');
 
-    // Инвентарь
-    this.load.image('item-bag-adidas', '/assets/props/flat/bags/bag-adidas.webp');
-    this.load.image('item-backpack-tourist', '/assets/props/flat/bags/backpack-tourist.webp');
-    this.load.image('item-shawarma', '/assets/props/flat/food/shawarma.webp');
-    this.load.image('item-energy-drink', '/assets/props/flat/food/energy-drink.webp');
-    this.load.image('item-adidas-jacket', '/assets/props/flat/clothing/adidas-jacket.webp');
-    this.load.image('item-sneakers', '/assets/props/flat/clothing/sneakers.webp');
-    this.load.image('item-crown', '/assets/props/flat/clothing/crown.webp');
+    // Инвентарь и предметы (правильные ключи для getItemSpriteKey)
+    this.load.image('bag-adidas', '/assets/props/flat/bags/bag-adidas.webp');
+    this.load.image('backpack-tourist', '/assets/props/flat/bags/backpack-tourist.webp');
+    this.load.image('shawarma', '/assets/props/flat/food/shawarma.webp');
+    this.load.image('energy-drink', '/assets/props/flat/food/energy-drink.webp');
+    this.load.image('hotdog', '/assets/props/flat/food/hotdog.webp');
+    this.load.image('sushi', '/assets/props/flat/food/sushi.webp');
+    this.load.image('pizza', '/assets/props/flat/food/pizza.webp');
+    this.load.image('salad', '/assets/props/flat/food/salad.webp');
+    this.load.image('ramen', '/assets/props/flat/food/ramen.webp');
+    this.load.image('steak', '/assets/props/flat/food/steak.webp');
+    this.load.image('jacket', '/assets/props/flat/clothing/jacket.webp');
+    this.load.image('sneakers', '/assets/props/flat/clothing/sneakers.webp');
+    this.load.image('crown', '/assets/props/flat/clothing/crown.webp');
+    this.load.image('parcel', '/assets/props/flat/parcel.png');
   }
 
   create(): void {
