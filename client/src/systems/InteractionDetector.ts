@@ -25,7 +25,14 @@ export class InteractionDetector {
     let targetX = playerX;
     let targetY = playerY;
 
+    const interactiveTypes: string[] = [
+      'kiosk', 'food-cart', 'clothing-shop', 'electronics-shop', 
+      'property', 'school', 'courier-hub', 'trash-sort-station', 'lemonade-stand'
+    ];
+
     for (const entity of entities) {
+      if (!interactiveTypes.includes(entity.type)) continue;
+
       const kx = entity.cellX * TILE_SIZE + TILE_SIZE_HALF;
       const ky = entity.cellY * TILE_SIZE + TILE_SIZE_HALF;
       const dist = Phaser.Math.Distance.Between(playerX, playerY, kx, ky);
